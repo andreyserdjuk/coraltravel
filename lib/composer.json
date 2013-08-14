@@ -1,0 +1,7 @@
+{
+    "require": {
+        "doctrine/orm": "*",
+        "symfony/yaml": "*",
+        "symfony/event-dispatcher": "*"
+    }
+}

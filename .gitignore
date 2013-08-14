@@ -1,0 +1,12 @@
+lib/vendor/*
+lib/dbParams.php
+lib/composer.phar
+lib/models/proxies
+coraltravel_xml/
+logs/
+
+.buildpath
+.project
+.settings
+
+lib/update_SQL.sql

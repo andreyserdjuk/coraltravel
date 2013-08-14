@@ -1,0 +1,1 @@
+php console.php orm:generate-proxies

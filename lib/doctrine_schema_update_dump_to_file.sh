@@ -1,0 +1,1 @@
+php console.php orm:schema-tool:update --dump-sql > update_SQL.sql
