@@ -7,9 +7,9 @@ class Parser {
 	public $uof; // unit of work
 
 	public function __construct() {
-		global $doctrine;
-		$this->em = $doctrine->em;
-		$this->conn = $doctrine->conn;
+		global $em;
+		$this->em = $em;
+		// $this->conn = $doctrine->conn;
 		$this->uof = $this->em->getUnitOfWork();
 	}
 

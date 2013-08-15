@@ -2,7 +2,7 @@ lib/vendor/*
 lib/dbParams.php
 lib/composer.phar
 lib/models/proxies
-coraltravel_xml/
+coraltravel_xml/*
 logs/
 
 .buildpath

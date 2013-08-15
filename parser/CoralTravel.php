@@ -731,7 +731,7 @@ Class CoralTravel extends Parser {
             foreach ($fileList as $fileZip) {
                 $fileZip = "$fileZip.xml.zip";
                 if ( !in_array( $fileZip, $ctParsedZips ) )  {
-                    $this->copyfile_chunked("http://service.coraltravel.ua/XmlFiles/$fileZip", "coraltravel_xml" . DIRECTORY_SEPARATOR . $fileZip);
+                    $this->copyfile_chunked("http://service.coraltravel.ua/XmlFiles/$fileZip", _R . "coraltravel_xml" . DIRECTORY_SEPARATOR . $fileZip);
                     $zip = new \ZipArchive;
                     $res = $zip->open( _R . 'coraltravel_xml'. DIRECTORY_SEPARATOR . $fileZip);
 
@@ -749,6 +749,37 @@ Class CoralTravel extends Parser {
                                 $mem_usage = memory_get_usage(true);
                                 if ( $fileXml!="." && $fileXml!=".." && preg_match("/.xml$/", $fileXml) ) {
                                     $xml = new \XMLReader;
+
+                                    $res1 = $xml->open(_R . "coraltravel_xml". DIRECTORY_SEPARATOR . $fileXml);
+                                    // fill AgeGroup
+                                    if ($res1 === TRUE) {
+                                        while ($xml->read()) {
+                                            if ($xml->nodeType == $xml::ELEMENT) {
+                                                if ($xml->name == 'a') {
+                                                    $params = array('ad' => $xml->getAttribute('ad'),
+                                                                    'cd' => $xml->getAttribute('cd'),
+                                                                    'fmn' => $xml->getAttribute('fmn'),
+                                                                    'fmx' => $xml->getAttribute('fmx'),
+                                                                    'smn' => $xml->getAttribute('smn'),
+                                                                    'smx' => $xml->getAttribute('smx'),
+                                                                    'tmn' => $xml->getAttribute('tmn'),
+                                                                    'tmx' => $xml->getAttribute('tmx'));
+
+                                                    $cachedAgeGroup = $this->getAgeGroupFromCache($params);
+                                                    if (!$cachedAgeGroup) {
+                                                        // if AgeGroup is not found in cache (cache contains all Entities), we should to create new AgeGroup
+                                                        $ctAgeGroupNew = new models\CtAgeGroup;
+                                                        $ctAgeGroupNew = models\dto\CtAgeGroup::toEntity($ctAgeGroupNew, $params);
+                                                        $this->ctAgeGroupCache[] = $ctAgeGroupNew;
+                                                        $this->em->persist($ctAgeGroupNew);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    $this->em->flush();
+                                    $xml->close();
+
                                     $res = $xml->open(_R . "coraltravel_xml". DIRECTORY_SEPARATOR . $fileXml);
                                     if ($res === TRUE) {
                                         $parsed = true;
@@ -896,7 +927,7 @@ Class CoralTravel extends Parser {
                                                                     'tmn' => $xml->getAttribute('tmn'),
                                                                     'tmx' => $xml->getAttribute('tmx'));
 
-                                                    $ctAgeGroup = $this->provideAgeGroup($params);
+                                                    $ctAgeGroup = $this->getAgeGroupFromCache($params);
                                                 }
 
                                                 // CtFlight & CtTourSchedule
@@ -959,7 +990,7 @@ Class CoralTravel extends Parser {
         }
     }
 
-    public function provideAgeGroup($params) {
+    public function getAgeGroupFromCache($params) {
 
         if (!isset($this->ctAgeGroupCache[0])) {
             $this->ctAgeGroupCache = $this->em->getRepository('models\CtAgeGroup')->findAll();
@@ -981,12 +1012,6 @@ Class CoralTravel extends Parser {
                 return $ctAgeGroupFound;
             }
         }
-        // if AgeGroup is not found in cache (cache contains all Entities), we should to create new AgeGroup
-        $ctAgeGroupNew = new models\CtAgeGroup;
-        $ctAgeGroupNew = models\dto\CtAgeGroup::toEntity($ctAgeGroupNew, $params);
-        $ctAgeGroupNew->save();
-        $this->ctAgeGroupCache[] = $ctAgeGroupNew;
-        return $ctAgeGroupNew;
     }
 
     /**
