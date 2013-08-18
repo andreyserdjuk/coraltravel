@@ -69,6 +69,14 @@ class CtTourSchedule extends EntityBase
         return json_decode($this->ctAgeGroups, true);
     }
 
+    public function setCtAgeGroupJson($ctAgeGroupJson) {
+        $this->ctAgeGroups = $ctAgeGroupJson;
+    }
+
+    public function getCtAgeGroupsJson() {
+        return $this->ctAgeGroups;
+    }
+
     public function setPrice($price) {
         $this->price = $price;
     }

@@ -6,12 +6,16 @@ if (!defined("LOCK_START")) { echo "not allowed direct calling";  exit; }
 
 Class CoralTravel extends Parser {
 
-    private $soap;                  // SoapClient()
-    public $em;                     // entity manager
-    private $ctAgeGroupCache;       // cahe of age groups - we don't need to disturb our database for age group searching...
-    private $ctFlightCache;         // cache of flights models\CtFlight
-    private $ctTourScheduleCanEdit; // id's of tour schedule, what we can edin in current loop
-    private $tourCache;             // cache of tours - the are only few elements...
+    private $soap;                          // SoapClient()
+    public $em;                             // entity manager
+    private $ctAgeGroupCache;               // cahe of age groups - we don't need to disturb our database for age group searching...
+    private $ctFlightCache;                 // cache of flights models\CtFlight
+    private $ctTourScheduleCanEdit;         // id's of tour schedule, what we can edin in current loop
+    private $tourCache;                     // cache of tours - the are only few elements...
+    private $ctTourScheduleIndexedCache;    // cache of ctTourSchedule - for fast search
+    private $ctFlightIndexedCache;          // cache of ctFlight - for fast search
+    private $ctTourIndexedCache;            // cache of ctFlight - for fast search
+    private $ctHotelIndexedCache;           // cache of ctHotel - for fast search
 
     public function __construct() {
         parent::__construct();
@@ -728,9 +732,11 @@ Class CoralTravel extends Parser {
           }
         }
         try {
+            $fileList = array(1);
             foreach ($fileList as $fileZip) {
                 $fileZip = "$fileZip.xml.zip";
                 if ( !in_array( $fileZip, $ctParsedZips ) )  {
+                    
                     $this->copyfile_chunked("http://service.coraltravel.ua/XmlFiles/$fileZip", _R . "coraltravel_xml" . DIRECTORY_SEPARATOR . $fileZip);
                     $zip = new \ZipArchive;
                     $res = $zip->open( _R . 'coraltravel_xml'. DIRECTORY_SEPARATOR . $fileZip);
@@ -748,11 +754,16 @@ Class CoralTravel extends Parser {
                             foreach ( scandir("coraltravel_xml") as $fileXml ) {
                                 $mem_usage = memory_get_usage(true);
                                 if ( $fileXml!="." && $fileXml!=".." && preg_match("/.xml$/", $fileXml) ) {
-                                    $xml = new \XMLReader;
 
-                                    $res1 = $xml->open(_R . "coraltravel_xml". DIRECTORY_SEPARATOR . $fileXml);
+                                    $operator = $this->em->getReference('models\Operator', 1);
+
+                                    /**
+                                     *  Insert entities START
+                                     */
                                     // fill AgeGroup
-                                    if ($res1 === TRUE) {
+                                    $xml = new \XMLReader;
+                                    $res = $xml->open(_R . "coraltravel_xml". DIRECTORY_SEPARATOR . $fileXml);
+                                    if ($res === TRUE) {
                                         while ($xml->read()) {
                                             if ($xml->nodeType == $xml::ELEMENT) {
                                                 if ($xml->name == 'a') {
@@ -764,7 +775,6 @@ Class CoralTravel extends Parser {
                                                                     'smx' => $xml->getAttribute('smx'),
                                                                     'tmn' => $xml->getAttribute('tmn'),
                                                                     'tmx' => $xml->getAttribute('tmx'));
-
                                                     $cachedAgeGroup = $this->getAgeGroupFromCache($params);
                                                     if (!$cachedAgeGroup) {
                                                         // if AgeGroup is not found in cache (cache contains all Entities), we should to create new AgeGroup
@@ -780,128 +790,52 @@ Class CoralTravel extends Parser {
                                     $this->em->flush();
                                     $xml->close();
 
+                                    // fill CtFlight
                                     $res = $xml->open(_R . "coraltravel_xml". DIRECTORY_SEPARATOR . $fileXml);
                                     if ($res === TRUE) {
-                                        $parsed = true;
-                                        $flushCount = 0;
                                         while ($xml->read()) {
                                             if ($xml->nodeType == $xml::ELEMENT) {
+                                                if ($xml->name == 'p') {
+                                                    $this->checkpoint();
+                                                    $ctFlight = $this->provideCtFlight($xml);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    $this->em->flush();
+                                    $xml->close();
+
+
+                                    // fill tour
+                                    $res = $xml->open(_R . "coraltravel_xml". DIRECTORY_SEPARATOR . $fileXml);
+                                    if ($res === TRUE) {
+                                        while ($xml->read()) {
+                                            if ($xml->nodeType == $xml::ELEMENT) {
+                                                
                                                 if ($xml->name == 'PackagePrices') {
-                                                    
-                                                    // destination Country
-                                                    $destinationID = $xml->getAttribute('destinationID');
-                                                    $q = $this->em
-                                                        ->createQuery(
-                                                            'SELECT ctc, c
-                                                                from models\CtCountry ctc
-                                                                left join ctc.country c
-                                                                where ctc.ctCountryId = :destinationID')
-                                                        ->setParameter('destinationID', $destinationID);
-
-                                                    $ctCountry = $q->getOneOrNullResult($q::HYDRATE_ARRAY);
-                                                    if (!$ctCountry) {
-                                                        $this->myLog(__LINE__, 'not found country with id:' . $ctCountry['country']['id'], 1);
-                                                    }
-                                                    $desinationCountryId = $ctCountry['country']['id'];
-
-                                                    // departure Place (city)
-                                                    $fromAreaID = $xml->getAttribute('fromAreaID');
-                                                    $ctArea = $this->em->getRepository('models\CtArea')->findOneBy(array('ctAreaId' => $fromAreaID));
-                                                    if (!$ctArea) {
-                                                        $this->myLog(__LINE__, "cann't find CtArea (fromAreaID) with ctAreaId: $fromAreaID", 1);
-                                                        $this->enableTasks(array(CtParsingTask::ID_UPDATE_COUNTRY,
-                                                                                 CtParsingTask::ID_UPDATE_REGION,
-                                                                                 CtParsingTask::ID_UPDATE_AREA,
-                                                                                 CtParsingTask::ID_UPDATE_PLACE));
-                                                        $parsed = false;
-                                                        break; // break current xml file parsing
-                                                    }
-                                                    $area = $ctArea->getArea();
-                                                    $departureCity = $this->em->getRepository('models\Place')->findOneBy(array('area' => $area->getId()));
-
-                                                    // currency
-                                                    $ctCurrencyId = $xml->getAttribute('currency');
-                                                    $ctCurrency = $this->em->getRepository('models\CtCurrency')->findOneBy(array('ctCurrencyId' => $ctCurrencyId));
-                                                    $currency = $ctCurrency->getCurrency();
-
-                                                    // $month = $xml->getAttribute('month');
+                                                    $vars = $this->firstStepTree($xml);            
+                                                    $currency = $vars['currency'];
+                                                    $departureCity = $vars['departureCity'];
                                                 }
 
                                                 // hotel id
                                                 if ($xml->name == 'hn') {
-                                                    // $this->memoryUsage("before hn flush");
-                                                        echo "$flushCount\r\n";
-                                                    // if ($flushCount > 10) {
-                                                    //     $this->em->flush();
-                                                    //     $this->em->clear();
-                                                    //     $flushCount = 0;
-                                                    // }
-                                                    $flushCount++;
-                                                    // $this->memoryUsage("after hn flush");
-
-                                                    $ctHotelId = $xml->getAttribute('h');
-                                                    $q = $this->em
-                                                        ->createQuery('SELECT ct_h, h
-                                                                        from models\CtHotel ct_h
-                                                                            join ct_h.hotel h
-                                                                            where ct_h.ctHotelId = :ctHotelId');
-                                                    $q->setParameter('ctHotelId', $ctHotelId);
-                                                    $ctHotel = $q->getOneOrNullResult($q::HYDRATE_ARRAY);
-                                                    if (!$ctHotel) {
-                                                        $this->myLog(__LINE__, "cann't find hotel id: $ctHotelId");
-                                                        $this->enableTasks(array(CtParsingTask::ID_UPDATE_HOTEL_CATEGORY_GROUP,
-                                                                                 CtParsingTask::ID_UPDATE_HOTEL_CATEGORY,
-                                                                                 CtParsingTask::ID_UPDATE_HOTEL));
+                                                    $hotel = $this->provideHotel($xml);
+                                                    if (!$hotel)
                                                         continue;
-                                                    }
-                                                    $hoteId = $ctHotel['hotel']['id'];
                                                 }
 
                                                 // room id
                                                 if ($xml->name == 'rn') {
-                                                    $ctRoomId = $xml->getAttribute('r');
-                                                    $q = $this->em
-                                                        ->createQuery('SELECT ct_r, r
-                                                                        from models\CtRoom ct_r
-                                                                            join ct_r.room r
-                                                                            where ct_r.ctRoomId = :ctRoomId');
-                                                    $q->setParameter('ctRoomId', $ctRoomId);
-                                                    $ctRoom = $q->getOneOrNullResult($q::HYDRATE_ARRAY);
-                                                    if (!$ctRoom) {
-                                                        $this->myLog(__LINE__, "cann't find ctRoomId: $ctRoomId");
-                                                        $this->enableTasks(array(CtParsingTask::ID_UPDATE_ROOM_CATEGORY,
-                                                                                 CtParsingTask::ID_UPDATE_ROOM));
+                                                    $room = $this->provideRoom($xml);
+                                                    if (!$room)
                                                         continue;
-                                                    }
-                                                    $roomId = $ctRoom['room']['id'];
                                                 }
 
-                                                // meal id
                                                 if ($xml->name == 'mn') {
-
-                                                    $ctMealId = $xml->getAttribute('m');
-                                                    $q = $this->em
-                                                        ->createQuery('SELECT ct_m, m
-                                                                        from models\CtMeal ct_m
-                                                                            join ct_m.meal m
-                                                                            where ct_m.ctMealId = :ctMealId')
-                                                        ->setParameter('ctMealId', $ctMealId);
-                                                    $ctMeal = $q->getOneOrNullResult($q::HYDRATE_ARRAY);
-                                                    if (!$ctMeal) {
-                                                        $this->myLog(__LINE__, "cann't find ctMeal id: $ctMealId");
-                                                        $this->enableTasks(array(CtParsingTask::ID_UPDATE_MEAL_CATEGORY,
-                                                                                 CtParsingTask::ID_UPDATE_MEAL));
+                                                    $meal = $this->provideMeal($xml);
+                                                    if (!$meal)
                                                         continue;
-                                                    }
-                                                    $mealId = $ctMeal['meal']['id'];
-
-                                                    // alternative to merging :)
-                                                    $departureCity = $this->em->getReference('models\Place', $departureCity->getId());
-                                                    $currency = $this->em->getReference('models\Currency', $currency->getId());
-                                                    $operator = $this->em->getReference('models\Operator', 1);
-                                                    $meal = $this->em->getReference('models\Meal', $mealId);
-                                                    $room = $this->em->getReference('models\Room', $roomId);
-                                                    $hotel = $this->em->getReference('models\Hotel', $hoteId);
 
                                                     // tour record
                                                     $createParams = array('hotel' => $hotel,
@@ -911,10 +845,69 @@ Class CoralTravel extends Parser {
                                                                           'operator' => $operator,
                                                                           'currency' => $currency );
 
-                                                    // $tour = $this->em->getRepository('models\Tour')->findOneBy($searchParams);
                                                     $tour = $this->provideTour($createParams);
                                                 }
-                                                // $tour = $this->em->getReference('models\Tour', $tour->getId());
+                                            }
+                                        }
+                                    }
+                                    $this->em->flush();
+                                    $xml->close();
+
+                                    /**
+                                     *  Insert relations
+                                     */
+                                    $count = 0;
+                                    $res = $xml->open(_R . "coraltravel_xml". DIRECTORY_SEPARATOR . $fileXml);
+                                    if ($res === TRUE) {
+
+                                        // init ctTourScheduleIndexedCache
+                                        $ctTourSchedules = $this->em->getRepository('models\CtTourSchedule')->findAll();
+                                        if (isset($ctTourSchedules[0])) {
+                                            foreach ($ctTourSchedules as $ctTourScheduleDB) {
+                                                $this->ctTourScheduleIndexedCache[$ctTourScheduleDB->getPrice()][$ctTourScheduleDB->getCtAgeGroupsJson()] = $ctTourScheduleDB;
+                                            }
+                                        }
+
+                                        $parsed = true;
+                                        while ($xml->read()) {
+                                            if ($xml->nodeType == $xml::ELEMENT) {
+                                                if ($xml->name == 'PackagePrices') {
+                                                    // $vars = $this->firstStepTree($xml);            
+                                                    // $currency = $vars['currency'];
+                                                    // $departureCity = $vars['departureCity'];
+                                                }
+
+                                                // hotel id
+                                                if ($xml->name == 'hn') {
+                                                    echo "hn $count\r\n"; $count++;
+                                                    $hotel = $this->provideHotel($xml);
+                                                    if (!$hotel)
+                                                        continue;
+                                                }
+
+                                                // room id
+                                                if ($xml->name == 'rn') {
+                                                    $room = $this->provideRoom($xml);
+                                                    if (!$room)
+                                                        continue;
+                                                }
+
+                                                // meal id
+                                                if ($xml->name == 'mn') {
+                                                    $meal = $this->provideMeal($xml);
+                                                    if (!$meal)
+                                                        continue;
+
+                                                    // tour record
+                                                    $createParams = array('hotel' => $hotel,
+                                                                          'departureCity' => $departureCity,
+                                                                          'room' => $room,
+                                                                          'meal' => $meal,
+                                                                          'operator' => $operator,
+                                                                          'currency' => $currency );
+
+                                                    $tour = $this->provideTour($createParams);
+                                                }
 
                                                 // ct_age_group id
                                                 if ($xml->name == 'a') {
@@ -926,7 +919,6 @@ Class CoralTravel extends Parser {
                                                                     'smx' => $xml->getAttribute('smx'),
                                                                     'tmn' => $xml->getAttribute('tmn'),
                                                                     'tmx' => $xml->getAttribute('tmx'));
-
                                                     $ctAgeGroup = $this->getAgeGroupFromCache($params);
                                                 }
 
@@ -935,22 +927,16 @@ Class CoralTravel extends Parser {
                                                     $this->checkpoint();
 
                                                     // provide ctFlight
-                                                    $paramsCtFlight = array('tourBegin'         => new \DateTime($xml->getAttribute('tb')),
-                                                                            'nights'            => $xml->getAttribute('n'),
-                                                                            'departureFlightId' => $xml->getAttribute('d'),
-                                                                            'returnFlightId'    => $xml->getAttribute('r'));
-
-                                                    $ctFlight = $this->provideCtFlight($paramsCtFlight);
+                                                    $ctFlight = $this->provideCtFlight($xml);
                                                     
                                                     // provide ctTourSchedule
                                                     // price per person
-                                                    $price = floor($xml->getAttribute('pr') / ($params['ad'] + $params['cd']));
-                                                    $paramsCtTourScheduleCreate = array('ctFlight'      => $ctFlight,
-                                                                                        'price'         => $price,
-                                                                                        'tour'          => $tour,
-                                                                                        'ctAgeGroups'   => $ctAgeGroup->getId());
+                                                    $price = floor($xml->getAttribute('pr') / ($ctAgeGroup->getAdultCount() + $ctAgeGroup->getChildCount()));
 
-                                                    $ctTourSchedule = $this->provideCtTourSchedule($paramsCtTourScheduleCreate);
+                                                    // $ctTourSchedule = $this->provideCtTourSchedule($paramsCtTourScheduleCreate);
+                                                    $paramsCtTourSchedule[$price]['ctFlight'][] = $ctFlight;
+                                                    $paramsCtTourSchedule[$price]['tour'] = $tour;
+                                                    $paramsCtTourSchedule[$price]['ctAgeGroups'][] = $ctAgeGroup->getId();
                                                 }
 
                                             /**
@@ -958,7 +944,37 @@ Class CoralTravel extends Parser {
                                              */
                                             } elseif ($xml->nodeType == $xml::END_ELEMENT) {
                                                 if ($xml->name == 'as') {
-                                                    $this->ctTourScheduleCanEdit = array();
+                                                    foreach ($paramsCtTourSchedule as $price => $params) {
+                                                        $ctAgeGroupsJson = json_encode($params['ctAgeGroups']);
+                                                        if (isset($this->ctTourScheduleIndexedCache[$price][$ctAgeGroupsJson])) {
+                                                            $ctTourSchedule = $this->ctTourScheduleIndexedCache[$price][$ctAgeGroupsJson];
+
+                                                            $ctFlights = $ctTourSchedule->getCtFlights();
+                                                            foreach ($params['ctFlight'] as $ctFlight) {
+                                                                if (!$ctFlights->contains($ctFlight)) {
+                                                                    $ctTourSchedule->setCtFlight($ctFlight);
+                                                                }
+                                                            }
+
+                                                            $tours = $ctTourSchedule->getTours();
+                                                            if (!$tours->contains($params['tour'])) {
+                                                                $ctTourSchedule->setTour($params['tour']);
+                                                            }
+                                                        } else {
+                                                            $ctTourSchedule = new models\CtTourSchedule;
+                                                            $ctTourSchedule->setCtAgeGroupJson($ctAgeGroupsJson);
+                                                            $ctTourSchedule->setPrice($price);
+                                                            $ctTourSchedule->setTour($params['tour']);
+                                                            foreach ($params['ctFlight'] as $ctFlight) {
+                                                                if (!$ctTourSchedule->getCtFlights()->contains($ctFlight)) {
+                                                                    $ctTourSchedule->setCtFlight($ctFlight);
+                                                                }
+                                                            }
+                                                            $this->em->persist($ctTourSchedule);
+                                                            $this->ctTourScheduleIndexedCache[$price][$ctAgeGroupsJson] = $ctTourSchedule;
+                                                        }
+                                                    }
+                                                    $paramsCtTourSchedule = array();
                                                 }
                                             }
                                         }
@@ -991,7 +1007,6 @@ Class CoralTravel extends Parser {
     }
 
     public function getAgeGroupFromCache($params) {
-
         if (!isset($this->ctAgeGroupCache[0])) {
             $this->ctAgeGroupCache = $this->em->getRepository('models\CtAgeGroup')->findAll();
         }
@@ -1008,8 +1023,7 @@ Class CoralTravel extends Parser {
                     $ctAgeGroup->getThirdChildMaxAge()  == $params['tmx']
                 ) 
             {
-                $ctAgeGroupFound = $this->em->getReference('models\CtAgeGroup', $ctAgeGroup->getId());
-                return $ctAgeGroupFound;
+                return $ctAgeGroup;
             }
         }
     }
@@ -1018,25 +1032,19 @@ Class CoralTravel extends Parser {
      * @param $params params for create CtTourSchedule
      */
     public function provideCtTourSchedule($params) {
-
-        $q = $this->em->createQuery("SELECT ts FROM models\CtTourSchedule ts 
-                                               JOIN ts.ctFlights f
-                                               JOIN ts.tours t
-                                     WHERE ts.price = :price
-                                     AND ts.ctAgeGroups LIKE :ctAgeGroup")
-                      ->setParameter('price', $params['price'])
-                      ->setParameter('ctAgeGroup', '%' . $params['ctAgeGroups'] . '%');
         
-        $ctTourSchedule = $this->searchScheduledInsertionCtTourSchedule($params['price']);
-
-        if ($ctTourSchedule && in_array($ctTourSchedule, $this->ctTourScheduleCanEdit)) {
+        $ctTourSchedule = $this->searchCtTourScheduleCanEdit($params);
+        if ($ctTourSchedule) {
+            // in_array($params['ctAgeGroups'], $ctTourSchedule->getCtAgeGroups()) &&
+            echo "-- can edit --";
             $ctTourSchedule->setCtAgeGroup($params['ctAgeGroups']);
         } else {
-            // $q::HYDRATE_ARRAY
-            $ctTourSchedule = $q->getResult();
-            if (isset($ctTourSchedule[0])) {
-                $ctTourSchedule = $ctTourSchedule[0];
-                // $ctTourSchedule = $this->em->find('models\CtTourSchedule', $ctTourScheduleArray['id']);
+            $ctTourSchedule = $this->searchScheduledInsertionCtTourSchedule($params);
+            if (!$ctTourSchedule) {
+                $ctTourSchedule = $this->getCtTourScheduleFromCache($params);
+            }
+            if ($ctTourSchedule) {
+                echo "-- sheduled for insert --";
                 $ctFlights = $ctTourSchedule->getCtFlights();
                 if (!$ctFlights->contains($params['ctFlight'])) {
                     $ctTourSchedule->setCtFlight($params['ctFlight']);
@@ -1046,51 +1054,67 @@ Class CoralTravel extends Parser {
                     $ctTourSchedule->setTour($params['tour']);
                 }
             } else {
+                echo "-p-";
                 $ctTourSchedule = new models\CtTourSchedule;
                 $ctTourSchedule = models\dto\CtTourSchedule::toEntity($ctTourSchedule, $params);
                 $this->em->persist($ctTourSchedule);
                 $this->ctTourScheduleCanEdit[] = $ctTourSchedule;
+                // $this->ctTourScheduleIndexedCache[$price];
             }
         }
         return $ctTourSchedule;
     }
 
-    public function provideCtFlight($params) {
-
-        // init cache
-        if (!isset($this->ctFlightCache[0])) {
-            $q = $this->em->createQuery("SELECT ctf FROM models\CtFlight ctf")->setMaxResults(999);
-            $this->ctFlightCache = $q->getResult($q::HYDRATE_ARRAY);
+    public function getCtTourScheduleFromCache($params){
+        if (isset($this->ctTourScheduleCache)) {
+            $this->ctTourScheduleCache = $this->em->getRepository('models\CtTourSchedule')->findAll();
+            // if (isset($this->ctTourScheduleCache[0])) {
+            //     if (!isset($this->ctTourScheduleIndexedCache[0])) {
+            //         foreach ($this->ctTourScheduleIndexedCache as $ctTourSchedule) {
+            //             $this->ctTourScheduleIndexedCache[$ctTourSchedule->getPrice()][$ctTourSchedule->getCtAgeGroupsJson()] = $ctTourSchedule;
+            //         }
+            //     }
+            // }
         }
 
-        // at first search in scheduled for insert
-        $ctFlight = $this->searchScheduledInsertionBy('models\CtFlight', $params);
+        // if (isset($this->ctTourScheduleIndexedCache[$params['price']][$params['ctAgeGroups']])) {
+        // }
 
-        if (!$ctFlight) {
-            // search in cache
-            foreach ($this->ctFlightCache as $ctFlightEl) {
-                if ( $ctFlightEl['tourBegin']->format("Y-m-d") == $params['tourBegin']->format("Y-m-d") &&
-                     $ctFlightEl['nights']                     == $params['nights']                     &&
-                     $ctFlightEl['departureFlightId']          == $params['departureFlightId']          &&
-                     $ctFlightEl['returnFlightId']             == $params['returnFlightId']
-                    )
-                {
-                    return $this->em->getReference('models\CtFlight', $ctFlightEl['id']);
+        if (isset($this->ctTourScheduleCache[0]))
+            foreach ($this->ctTourScheduleCache as $ctTourSchedule) {
+                if ( $ctTourSchedule->getPrice() == $params['price'] &&
+                     $ctTourSchedule->getCtAgeGroupsJson() == '[' . $params['ctAgeGroups'] . ']'
+                    ) {
+                    return $ctTourSchedule;
                 }
             }
+    }
 
-            $ctFlight = $this->em->getRepository('models\CtFlight')->findOneBy($params);
+    public function provideCtFlight($xml) {
 
-            if (!$ctFlight) {
-                $ctFlight = new models\CtFlight;
-                $ctFlight = models\dto\CtFlight::toEntity($ctFlight, $params);
-                $this->em->persist($ctFlight);
-            } else {
-                if (isset($this->ctFlightCache[1000])) {
-                    array_shift($this->ctFlightCache);
-                }
-                $this->ctFlightCache[] = models\dto\CtFlight::toSimpleArray($ctFlight);
+        $params = array('tourBegin'         => new \DateTime($xml->getAttribute('tb')),
+                        'nights'            => $xml->getAttribute('n'),
+                        'departureFlightId' => $xml->getAttribute('d'),
+                        'returnFlightId'    => $xml->getAttribute('r'));
+        // init cache
+        if (!isset($this->ctFlightIndexedCache[0])) {
+            $this->ctFlightIndexedCache[0] = 1;
+            $ctFlights = $this->em->getRepository('models\CtFlight')->findAll();
+            foreach ($ctFlights as $ctf) {
+                $nights = $ctf->getNights();
+                $departureFlightId = $ctf->getDepartureFlightId();
+                $returnFlightId = $ctf->getReturnFlightId();
+                $this->ctFlightIndexedCache[$nights][$departureFlightId][$returnFlightId] = $ctf;
             }
+        }
+
+        if (isset($this->ctFlightIndexedCache[$params['nights']][$params['departureFlightId']][$params['returnFlightId']])) {
+            $ctFlight = $this->ctFlightIndexedCache[$params['nights']][$params['departureFlightId']][$params['returnFlightId']];
+        } else {
+            $ctFlight = new models\CtFlight;
+            $ctFlight = models\dto\CtFlight::toEntity($ctFlight, $params);
+            $this->ctFlightIndexedCache[$params['nights']][$params['departureFlightId']][$params['returnFlightId']] = $ctFlight;
+            $this->em->persist($ctFlight);
         }
         return $ctFlight;
     }
@@ -1139,16 +1163,16 @@ Class CoralTravel extends Parser {
         }
     }
 
-    public function searchScheduledInsertionCtTourSchedule($price) {
+    public function searchScheduledInsertionCtTourSchedule($params) {
+
         $scheduledEntityInsertions = $this->uof->getScheduledEntityInsertions();
-        
+
         if (gettype($scheduledEntityInsertions) == 'array') {
-
             foreach ($scheduledEntityInsertions as $hash => $object) {
-
                 if (get_class($object) == 'models\CtTourSchedule') {
-
-                    if ($object->getPrice() == $price) {
+                    if ( $object->getPrice() == $params['price'] &&
+                         $object->getCtAgeGroupsJson() == '[' . $params['ctAgeGroups'] . ']'
+                        ) {
                         return $object;
                     }
                 }
@@ -1156,77 +1180,165 @@ Class CoralTravel extends Parser {
         }
     }
 
-    public function provideTour($params) {
-
-        $searchParams = array('hotel'           => $params['hotel']->getId(),
-                              'departureCity'   => $params['departureCity']->getId(),
-                              'room'            => $params['room']->getId(),
-                              'meal'            => $params['meal']->getId(),
-                              'operator'        => $params['operator']->getId(),
-                              'currency'        => $params['currency']->getId() );
-
-        if(!isset($this->tourCache['0'])) {
-            $this->tourCache = $this->em->getRepository('models\Tour')->findAll();
+    public function searchCtTourScheduleCanEdit($params) {
+        foreach ($this->ctTourScheduleCanEdit as $ctTourSchedule) {
+            if ($ctTourSchedule->getPrice() == $params['price']) {
+                return $ctTourSchedule;
+            }
         }
+    }
 
-        foreach ($this->tourCache as $tour) {
-
-            if (
-                 $tour->getDepartureCity()->getId()  == $params['hotel']->getId()  &&
-                 $tour->getHotel()->getId()          == $params['departureCity']->getId()  &&
-                 $tour->getMeal()->getId()           == $params['room']->getId()  &&
-                 $tour->getOperator()->getId()       == $params['meal']->getId()  &&
-                 $tour->getRoom()->getId()           == $params['operator']->getId()  &&
-                 $tour->getCurrency()->getId()       == $params['currency']->getId()
-                )
-            {
-                // $tour = $this->em->getReference('models\Tour', $tour->getId());
-                return $tour;
+    public function provideTour($params) {
+        // cache init
+        if (!isset($this->ctTourIndexedCache[0])) {
+            $this->ctTourIndexedCache[0] = 1;
+            $tours = $this->em->getRepository('models\Tour')->findAll();
+            if(isset($tours[0])) {
+                foreach ($tours as $tour) {
+                    $operator = $tour->getOperator()->getId();
+                    $currency = $tour->getCurrency()->getId();
+                    $departureCity = $tour->getDepartureCity()->getId();
+                    $hotel = $tour->getHotel()->getId();
+                    $room = $tour->getRoom()->getId();
+                    $meal = $tour->getMeal()->getId();
+                    $this->ctTourIndexedCache[$operator][$currency][$departureCity][$hotel][$room][$meal] = $tour;
+                }
             }
         }
 
+        $operator = $params['operator']->getId();
+        $currency = $params['currency']->getId();
+        $departureCity = $params['departureCity']->getId();
+        $hotel = $params['hotel']->getId();
+        $room = $params['room']->getId();
+        $meal = $params['meal']->getId();
 
-        $tour = new models\Tour;
-        $tour = models\dto\Tour::toEntity($tour, $params);
-        $this->tourCache[] = $tour;
-        // $tour->save();
+        if (isset($this->ctTourIndexedCache[$operator][$currency][$departureCity][$hotel][$room][$meal])) {
+            $tour = $this->ctTourIndexedCache[$operator][$currency][$departureCity][$hotel][$room][$meal];
+        } else {
+            $tour = new models\Tour;
+            $tour = models\dto\Tour::toEntity($tour, $params);
+            $this->em->persist($tour);
+            $this->ctTourIndexedCache[$operator][$currency][$departureCity][$hotel][$room][$meal] = $tour;
+        }
         return $tour;
     }
 
-    // function updateCtHotelRank() {
-    //     $stmt = $this->conn->prepare("TRUNCATE TABLE `tour_parsing`.`ct_hotel_rank`");
-    //     $stmt->execute();
-    //     $stmt = $this->conn->prepare(
-    //         'INSERT INTO ct_hotel_rank(hotel_id)
-    //             SELECT hotel.id hotel_id
-    //                 FROM hotel
-    //                 INNER JOIN tour
-    //                     ON tour.`hotel_id` = hotel.id AND tour.`operator_id` = 1
-    //                 INNER JOIN tour_schedule
-    //                     ON tour.`id` =  tour_schedule.`tour_id`
-    //                 INNER JOIN `ct_age_group`
-    //                     ON ct_age_group.`id` = tour.`age_group` AND ct_age_group.`ad` = 2 AND ct_age_group.cd = 0
-    //             GROUP BY hotel.id
-    //             ORDER BY price'
-    //     );
-    //     $stmt->execute();
-    // }
-}
+    public function provideHotel($xml) {
+        // cache init
+        if (!isset($this->ctHotelIndexedCache[0])) {
+            $this->ctHotelIndexedCache[0] = 1;
 
-// $stmt = $this->conn->prepare(
-//     'DELETE FROM tour_schedule 
-//         where tour_id IN (
-//             select id from tour
-//                 where departure_place_id = :departure_place_id
-//                 and desination_country_id = :desination_country_id
-//                 and operator_id = 1
-//         )
-//         AND MONTH(tour_begin) = :tour_begin_month
-//     ');
-// // we can delete only older parsed info!
-// $stmt->bindValue('departure_place_id', $departureCity->getId());
-// $stmt->bindValue('desination_country_id', $desinationCountryId);
-// $stmt->bindValue('tour_begin_month', $month);
-// $stmt->execute();
-// $stmt = $this->conn->prepare('DELETE FROM tour WHERE id NOT IN (SELECT DISTINCT tour_id FROM tour_schedule) AND operator_id = 1');
-// $stmt->execute();
+            $q = $this->em->createQuery('SELECT ct_h, h from models\CtHotel ct_h join ct_h.hotel h');
+            $ctHotels = $q->getResult($q::HYDRATE_ARRAY);
+            if(isset($ctHotels[0])) {
+                foreach ($ctHotels as $row) {
+                    $this->ctHotelIndexedCache[$row['ctHotelId']] = $row['hotel']['id'];
+                }
+            }
+        }
+
+        $ctHotelId = $xml->getAttribute('h');
+        
+        if (isset($this->ctHotelIndexedCache[$ctHotelId])) {
+            $hoteId = $this->ctHotelIndexedCache[$ctHotelId];
+            return $this->em->getReference('models\Hotel', $hoteId);
+        } else {
+            $this->myLog(__LINE__, "cann't find hotel id: $ctHotelId");
+            $this->enableTasks(array(CtParsingTask::ID_UPDATE_HOTEL_CATEGORY_GROUP,
+                                     CtParsingTask::ID_UPDATE_HOTEL_CATEGORY,
+                                     CtParsingTask::ID_UPDATE_HOTEL));
+        }
+    }
+
+    public function provideMeal($xml) {
+        // cache init
+        if (!isset($this->ctMealIndexedCache[0])) {
+            $this->ctMealIndexedCache[0] = 1;
+            $q = $this->em->createQuery('SELECT ct_m, m from models\CtMeal ct_m join ct_m.meal m');
+            $ctMeals = $q->getResult($q::HYDRATE_ARRAY);
+            if(isset($ctMeals[0])) {
+                foreach ($ctMeals as $row) {
+                    $this->ctMealIndexedCache[$row['ctMealId']] = $row['meal']['id'];
+                }
+            }
+        }
+        
+        $ctMealId = $xml->getAttribute('m');
+
+        if (isset($this->ctMealIndexedCache[$ctMealId])) {
+            $mealId = $this->ctMealIndexedCache[$ctMealId];
+            return $this->em->getReference('models\Meal', $mealId);
+        } else {
+            $this->myLog(__LINE__, "cann't find ctMeal id: $ctMealId");
+            $this->enableTasks(array(CtParsingTask::ID_UPDATE_MEAL_CATEGORY,
+                                     CtParsingTask::ID_UPDATE_MEAL));
+        }
+    }
+
+    public function provideRoom($xml) {
+        // cache init
+        if (!isset($this->ctRoomIndexedCache[0])) {
+            $this->ctRoomIndexedCache[0] = 1;
+            $q = $this->em->createQuery('SELECT ct_r, r from models\CtRoom ct_r join ct_r.room r');
+            $ctRooms = $q->getResult($q::HYDRATE_ARRAY);
+            if(isset($ctRooms[0])) {
+                foreach ($ctRooms as $row) {
+                    $this->ctRoomIndexedCache[$row['ctRoomId']] = $row['room']['id'];
+                }
+            }
+        }
+
+        $ctRoomId = $xml->getAttribute('r');
+
+        if (isset($this->ctRoomIndexedCache[$ctRoomId])) {
+            $roomId = $this->ctRoomIndexedCache[$ctRoomId];
+            return $this->em->getReference('models\Room', $roomId);
+        } else {
+            $this->myLog(__LINE__, "cann't find ctRoomId: $ctRoomId");
+            $this->enableTasks(array(CtParsingTask::ID_UPDATE_ROOM_CATEGORY,
+                                     CtParsingTask::ID_UPDATE_ROOM));
+        }
+    }
+
+    public function firstStepTree($xml) {
+        // destination Country
+        // $destinationID = $xml->getAttribute('destinationID');
+        // $q = $this->em
+        //     ->createQuery(
+        //         'SELECT ctc, c
+        //             from models\CtCountry ctc
+        //             left join ctc.country c
+        //             where ctc.ctCountryId = :destinationID')
+        //     ->setParameter('destinationID', $destinationID);
+
+        // $ctCountry = $q->getOneOrNullResult($q::HYDRATE_ARRAY);
+        // if (!$ctCountry) {
+        //     $this->myLog(__LINE__, 'not found country with id:' . $ctCountry['country']['id'], 1);
+        // }
+        // $desinationCountryId = $ctCountry['country']['id'];
+
+        // departure Place (city)
+        $fromAreaID = $xml->getAttribute('fromAreaID');
+        $ctArea = $this->em->getRepository('models\CtArea')->findOneBy(array('ctAreaId' => $fromAreaID));
+        if (!$ctArea) {
+            $this->myLog(__LINE__, "cann't find CtArea (fromAreaID) with ctAreaId: $fromAreaID", 1);
+            $this->enableTasks(array(CtParsingTask::ID_UPDATE_COUNTRY,
+                                     CtParsingTask::ID_UPDATE_REGION,
+                                     CtParsingTask::ID_UPDATE_AREA,
+                                     CtParsingTask::ID_UPDATE_PLACE));
+            $parsed = false;
+            break; // break current xml file parsing
+        }
+        $area = $ctArea->getArea();
+        $departureCity = $this->em->getRepository('models\Place')->findOneBy(array('area' => $area->getId()));
+
+        // currency
+        $ctCurrencyId = $xml->getAttribute('currency');
+        $ctCurrency = $this->em->getRepository('models\CtCurrency')->findOneBy(array('ctCurrencyId' => $ctCurrencyId));
+        $currency = $ctCurrency->getCurrency();
+
+        return array('currency'          => $currency,
+                     'departureCity'     => $departureCity);
+    }
+}
