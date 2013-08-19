@@ -16,6 +16,7 @@ Class CoralTravel extends Parser {
     private $ctFlightIndexedCache;          // cache of ctFlight - for fast search
     private $ctTourIndexedCache;            // cache of ctFlight - for fast search
     private $ctHotelIndexedCache;           // cache of ctHotel - for fast search
+    private $departureCityFlag;
 
     public function __construct() {
         parent::__construct();
@@ -732,7 +733,6 @@ Class CoralTravel extends Parser {
           }
         }
         try {
-            $fileList = array(1);
             foreach ($fileList as $fileZip) {
                 $fileZip = "$fileZip.xml.zip";
                 if ( !in_array( $fileZip, $ctParsedZips ) )  {
@@ -933,8 +933,7 @@ Class CoralTravel extends Parser {
                                                     // price per person
                                                     $price = floor($xml->getAttribute('pr') / ($ctAgeGroup->getAdultCount() + $ctAgeGroup->getChildCount()));
 
-                                                    // $ctTourSchedule = $this->provideCtTourSchedule($paramsCtTourScheduleCreate);
-                                                    $paramsCtTourSchedule[$price]['ctFlight'][] = $ctFlight;
+                                                    $paramsCtTourSchedule[$price]['ctFlight'][spl_object_hash($ctFlight)] = $ctFlight;
                                                     $paramsCtTourSchedule[$price]['tour'] = $tour;
                                                     $paramsCtTourSchedule[$price]['ctAgeGroups'][] = $ctAgeGroup->getId();
                                                 }
@@ -1028,68 +1027,6 @@ Class CoralTravel extends Parser {
         }
     }
 
-    /**
-     * @param $params params for create CtTourSchedule
-     */
-    public function provideCtTourSchedule($params) {
-        
-        $ctTourSchedule = $this->searchCtTourScheduleCanEdit($params);
-        if ($ctTourSchedule) {
-            // in_array($params['ctAgeGroups'], $ctTourSchedule->getCtAgeGroups()) &&
-            echo "-- can edit --";
-            $ctTourSchedule->setCtAgeGroup($params['ctAgeGroups']);
-        } else {
-            $ctTourSchedule = $this->searchScheduledInsertionCtTourSchedule($params);
-            if (!$ctTourSchedule) {
-                $ctTourSchedule = $this->getCtTourScheduleFromCache($params);
-            }
-            if ($ctTourSchedule) {
-                echo "-- sheduled for insert --";
-                $ctFlights = $ctTourSchedule->getCtFlights();
-                if (!$ctFlights->contains($params['ctFlight'])) {
-                    $ctTourSchedule->setCtFlight($params['ctFlight']);
-                }
-                $tours = $ctTourSchedule->getTours();
-                if (!$tours->contains($params['tour'])) {
-                    $ctTourSchedule->setTour($params['tour']);
-                }
-            } else {
-                echo "-p-";
-                $ctTourSchedule = new models\CtTourSchedule;
-                $ctTourSchedule = models\dto\CtTourSchedule::toEntity($ctTourSchedule, $params);
-                $this->em->persist($ctTourSchedule);
-                $this->ctTourScheduleCanEdit[] = $ctTourSchedule;
-                // $this->ctTourScheduleIndexedCache[$price];
-            }
-        }
-        return $ctTourSchedule;
-    }
-
-    public function getCtTourScheduleFromCache($params){
-        if (isset($this->ctTourScheduleCache)) {
-            $this->ctTourScheduleCache = $this->em->getRepository('models\CtTourSchedule')->findAll();
-            // if (isset($this->ctTourScheduleCache[0])) {
-            //     if (!isset($this->ctTourScheduleIndexedCache[0])) {
-            //         foreach ($this->ctTourScheduleIndexedCache as $ctTourSchedule) {
-            //             $this->ctTourScheduleIndexedCache[$ctTourSchedule->getPrice()][$ctTourSchedule->getCtAgeGroupsJson()] = $ctTourSchedule;
-            //         }
-            //     }
-            // }
-        }
-
-        // if (isset($this->ctTourScheduleIndexedCache[$params['price']][$params['ctAgeGroups']])) {
-        // }
-
-        if (isset($this->ctTourScheduleCache[0]))
-            foreach ($this->ctTourScheduleCache as $ctTourSchedule) {
-                if ( $ctTourSchedule->getPrice() == $params['price'] &&
-                     $ctTourSchedule->getCtAgeGroupsJson() == '[' . $params['ctAgeGroups'] . ']'
-                    ) {
-                    return $ctTourSchedule;
-                }
-            }
-    }
-
     public function provideCtFlight($xml) {
 
         $params = array('tourBegin'         => new \DateTime($xml->getAttribute('tb')),
@@ -1163,37 +1100,21 @@ Class CoralTravel extends Parser {
         }
     }
 
-    public function searchScheduledInsertionCtTourSchedule($params) {
-
-        $scheduledEntityInsertions = $this->uof->getScheduledEntityInsertions();
-
-        if (gettype($scheduledEntityInsertions) == 'array') {
-            foreach ($scheduledEntityInsertions as $hash => $object) {
-                if (get_class($object) == 'models\CtTourSchedule') {
-                    if ( $object->getPrice() == $params['price'] &&
-                         $object->getCtAgeGroupsJson() == '[' . $params['ctAgeGroups'] . ']'
-                        ) {
-                        return $object;
-                    }
-                }
-            }
-        }
-    }
-
-    public function searchCtTourScheduleCanEdit($params) {
-        foreach ($this->ctTourScheduleCanEdit as $ctTourSchedule) {
-            if ($ctTourSchedule->getPrice() == $params['price']) {
-                return $ctTourSchedule;
-            }
-        }
-    }
-
     public function provideTour($params) {
+        $operator = $params['operator']->getId();
+        $currency = $params['currency']->getId();
+        $departureCity = $params['departureCity']->getId();
+        $hotel = $params['hotel']->getId();
+        $room = $params['room']->getId();
+        $meal = $params['meal']->getId();
+
         // cache init
-        if (!isset($this->ctTourIndexedCache[0])) {
+        if (!isset($this->ctTourIndexedCache[0]) || $this->departureCityFlag != $departureCity) {
+            $this->departureCityFlag = $departureCity;
             $this->ctTourIndexedCache[0] = 1;
-            $tours = $this->em->getRepository('models\Tour')->findAll();
+            $tours = $this->em->getRepository('models\Tour')->findBy(array('operator' => $params['operator'], 'departureCity' => $params['departureCity']));
             if(isset($tours[0])) {
+                $this->ctTourIndexedCache = array();
                 foreach ($tours as $tour) {
                     $operator = $tour->getOperator()->getId();
                     $currency = $tour->getCurrency()->getId();
@@ -1205,13 +1126,6 @@ Class CoralTravel extends Parser {
                 }
             }
         }
-
-        $operator = $params['operator']->getId();
-        $currency = $params['currency']->getId();
-        $departureCity = $params['departureCity']->getId();
-        $hotel = $params['hotel']->getId();
-        $room = $params['room']->getId();
-        $meal = $params['meal']->getId();
 
         if (isset($this->ctTourIndexedCache[$operator][$currency][$departureCity][$hotel][$room][$meal])) {
             $tour = $this->ctTourIndexedCache[$operator][$currency][$departureCity][$hotel][$room][$meal];
