@@ -21,4 +21,15 @@ $ct2->setPrice(2015);
 $ct2->setCtFlight($flight);
 $em->persist($ct);
 $em->persist($ct2);
-$em->flush();
+
+$uof = $em->getUnitOfWork();
+$ins = $uof->getScheduledEntityInsertions();
+// var_dump($ins);
+foreach ($ins as $i) {
+	$fl = $i->getCtFlights();
+	echo $fl[0]->getId();
+	// var_dump($fl);
+	exit;
+}
+
+// $em->flush();
