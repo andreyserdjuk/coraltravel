@@ -39,15 +39,6 @@ class CtFlight extends EntityBase
      */
     private $active;
 
-    /**
-     * @ManyToMany(targetEntity="CtTourSchedule", mappedBy="ctFlights")
-     */
-    private $ctTourSchedules;
-
-
-    public function __construct() {
-        $this->ctTourSchedules = new \Doctrine\Common\Collections\ArrayCollection();
-    }
 
     public function getId() {
         return $this->id;
