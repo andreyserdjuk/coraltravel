@@ -62,14 +62,6 @@ class Accomodation extends EntityBase
      */
     private $currency;
 
-    /**
-     * @ManyToOne(targetEntity="CtFlight")
-     * @JoinColumns({
-     *   @JoinColumn(name="ct_flight_id", referencedColumnName="id")
-     * })
-     */
-    private $ctFlight;
-
 
     public function getId() {
         return $this->id;
@@ -122,13 +114,5 @@ class Accomodation extends EntityBase
 
     public function getCurrency() {
         return $this->currency;
-    }
-
-    public function getCtFlight() {
-        return $this->ctFlight;
-    }
-
-    public function setCtFlight($ctFlight) {
-        $this->ctFlight = $ctFlight;
     }
 }

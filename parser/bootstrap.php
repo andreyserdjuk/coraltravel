@@ -11,13 +11,13 @@ $doctrineClassLoader = new \Doctrine\Common\ClassLoader('parser', _R );
 $doctrineClassLoader->register();
 
 
-$coral = new CoralTravel();
-
 if (THREAD == 'updateDictionaries') {
+	$coral = new CoralTravelDict;
 	$coral->updateDictionaries();
 }
 
 if (THREAD == 'coralParseXml') {
+	$coral = new CoralTravelXML;
 	$coral->parseXml();
 }
 

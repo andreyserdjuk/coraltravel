@@ -21,7 +21,9 @@ class FileSQLLogger implements Doctrine\DBAL\Logging\SQLLogger {
 		$ob = ob_get_clean() . PHP_EOL;
     	$line = $sql . PHP_EOL;
 
-		$file = fopen('logs'.DIRECTORY_SEPARATOR.'logSQL.txt', 'a+');
+        $path = defined('_R')? _R.'logs'.DIRECTORY_SEPARATOR.'logSQL.txt' : '../logs'.DIRECTORY_SEPARATOR.'logSQL.txt';
+        $file = fopen($path, 'a+');
+
 	    fwrite($file, $line . $ob);
 	    fclose($file);
     }

@@ -8,12 +8,19 @@ namespace models;
 class CtPrice extends EntityBase 
 {
     /**
-     * @ManyToOne(targetEntity="Tour")
+     * @Column(name="id", type="integer", nullable=false)
+     * @Id
+     * @GeneratedValue(strategy="IDENTITY")
+     */
+    private $id;
+
+    /**
+     * @ManyToOne(targetEntity="Accomodation")
      * @JoinColumns({
-     *   @JoinColumn(name="ct_tour", referencedColumnName="id")
+     *   @JoinColumn(name="accomodation", referencedColumnName="id")
      * })
      */
-    private $tour;
+    private $accomodation;
 
     /**
      * @ManyToOne(targetEntity="CtAgeGroupBundle")
@@ -24,8 +31,15 @@ class CtPrice extends EntityBase
     private $ctAgeGroupBundle;
 
     /**
+     * @ManyToOne(targetEntity="CtFlightBundle")
+     * @JoinColumns({
+     *   @JoinColumn(name="ct_flight_bundle_id", referencedColumnName="id")
+     * })
+     */
+    private $ctFlightBundle;
+
+    /**
      * @Column(type="smallint", name="price", nullable=false)
-     * @Index
      */
     private $price;
 
@@ -46,11 +60,19 @@ class CtPrice extends EntityBase
         return $this->price;
     }
 
-    public function setTour($tour) {
-        $this->tour = $tour;
+    public function setAccomodation($accomodation) {
+        $this->accomodation = $accomodation;
     }
 
-    public function getTour() {
-        return $this->tour;
+    public function getAccomodation() {
+        return $this->accomodation;
+    }
+
+    public function getCtFlightBundle() {
+        return $this->ctFlightBundle;
+    }
+
+    public function setCtFlightBundle($ctFlightBundle) {
+        $this->ctFlightBundle = $ctFlightBundle;
     }
 }
