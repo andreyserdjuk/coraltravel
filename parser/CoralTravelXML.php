@@ -156,11 +156,11 @@ Class CoralTravelXML extends Parser {
 
                                             if ($insertCounter > 100) {
                                                 $this->doInserts($ass);
-                                                echo "--- $insertCounter ----";
+                                                echo "-i-";
                                                 $insertCounter = 0;
+                                                $ass = array();
                                             }
                                             $insertCounter++;
-                                            $ass = array();
                                         }
 
                                         if ($xml->name == 'a') {
@@ -215,7 +215,7 @@ Class CoralTravelXML extends Parser {
                             }
 
                             $this->myLog(__LINE__, "parsing of file: $fileXml ended");
-                            exit;
+                            // exit;
                         }
                     }
                 } else {
@@ -526,38 +526,39 @@ Class CoralTravelXML extends Parser {
 
         $this->em->flush();
 
-        $priceArr = current($ass);
-        $param = current($priceArr);
-        $ctPrices = $this->em->getRepository('models\CtPrice')->findBy(array('accomodation' => $param['accomodation']));
-        foreach ($ctPrices as $ctPrice) {
-            $ctPricesCache[$ctPrice->getAccomodation()->getId()][$ctPrice->getCtFlightBundle()->getId()][$ctPrice->getCtAgeGroupBundle()->getId()] = $ctPrice->getPrice();
-        }
+        // $priceArr = current($ass);
+        // $param = current($priceArr);
+        // $ctPrices = $this->em->getRepository('models\CtPrice')->findBy(array('accomodation' => $param['accomodation']));
+        // foreach ($ctPrices as $ctPrice) {
+        //     $ctPricesCache[$ctPrice->getAccomodation()->getId()][$ctPrice->getCtFlightBundle()->getId()][$ctPrice->getCtAgeGroupBundle()->getId()] = $ctPrice->getPrice();
+        // }
         
         foreach ($ass as $priceArr) {
             foreach ($priceArr as $price => $param) {  
 
-                $doInsert = true;
-                foreach ($ctPrices as $ctPrice) {
-                    if ( isset($ctPricesCache[$param['accomodation']->getId()][$param['ctFlightBundle']->getId()][$param['ctAgeGroupBundle']->getId()])     &&
-                         $ctPricesCache[$param['accomodation']->getId()][$param['ctFlightBundle']->getId()][$param['ctAgeGroupBundle']->getId()] == $price
-                        )
-                    {
-                        $doInsert = false;
-                        break;
-                    }
-                }
+                // $doInsert = true;
+                // foreach ($ctPrices as $ctPrice) {
+                //     if ( isset($ctPricesCache[$param['accomodation']->getId()][$param['ctFlightBundle']->getId()][$param['ctAgeGroupBundle']->getId()])     &&
+                //          $ctPricesCache[$param['accomodation']->getId()][$param['ctFlightBundle']->getId()][$param['ctAgeGroupBundle']->getId()] == $price
+                //         )
+                //     {
+                //         $doInsert = false;
+                //         break;
+                //     }
+                // }
 
-                if ($doInsert) {
+                // if ($doInsert) {
                     if (!isset($query)) {
                         $query = 'insert into ct_price(price, accomodation, ct_age_group_bundle, ct_flight_bundle_id) 
                                     values('.$price.','.$param['accomodation']->getId().','.$param['ctAgeGroupBundle']->getId().','.$param['ctFlightBundle']->getId().')';
                     } else {
                         $query .= ',('.$price.','.$param['accomodation']->getId().','.$param['ctAgeGroupBundle']->getId().','.$param['ctFlightBundle']->getId().')';
                     }
-                }
+                // }  
             }
         }
-        
-        $this->conn->executeQuery($query); 
+        if ($query) {
+            $this->conn->executeQuery($query); 
+        }
     }
 }

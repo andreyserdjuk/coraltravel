@@ -49,7 +49,7 @@ class CtPrice extends EntityBase
     }
 
     public function getCtAgeGroupBundle() {
-        return $ctAgeGroupBundle;
+        return $this->ctAgeGroupBundle;
     }
 
     public function setPrice($price) {
