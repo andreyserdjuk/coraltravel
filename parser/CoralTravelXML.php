@@ -31,7 +31,7 @@ Class CoralTravelXML extends Parser {
             $monthNumbers[] = $d->format( 'm' );
             $d->modify( 'first day of next month' );
             $i++;
-        } while ($i < 4); 
+        } while ($i < 3); 
         
         /**
          * extract file list from found elements
@@ -107,6 +107,8 @@ Class CoralTravelXML extends Parser {
                             $res = $xml->open(_R . "coraltravel_xml". DIRECTORY_SEPARATOR . $fileXml);
                             $as = 1;
                             $insertCounter = 1;
+                            $total_P = $total_P_insert = 0;
+                            $pCount = 0;
                             if ($res === TRUE) {
                                 while ($xml->read()) {
                                     if ($xml->nodeType == $xml::ELEMENT) {
@@ -124,6 +126,7 @@ Class CoralTravelXML extends Parser {
                                         // hotel id
                                         if ($xml->name == 'hn') {
                                             $hotel = $this->provideHotel($xml);
+                                            $ctHotelId = $xml->getAttribute('h');
                                             if (!$hotel)
                                                 continue;
                                         }
@@ -155,8 +158,10 @@ Class CoralTravelXML extends Parser {
                                             $as++;
 
                                             if ($insertCounter > 100) {
-                                                $this->doInserts($ass);
-                                                echo "-i-";
+                                                $pCountInsert = $this->doInserts($ass);
+                                                $total_P_insert += $pCountInsert;
+                                                echo "- i = $pCountInsert, amount = $pCount, total_P = $total_P, total_insert = $total_P_insert\r\n";
+                                                $pCount = 0;
                                                 $insertCounter = 0;
                                                 $ass = array();
                                             }
@@ -186,11 +191,27 @@ Class CoralTravelXML extends Parser {
                                         // CtFlight & CtTourSchedule
                                         if ($xml->name == 'p') {
 
+                                            $pCount++; $total_P++;
+
                                             // provide ctFlight
                                             $ctFlight = $this->provideCtFlight($xml);
 
                                             // price per person
                                             $price = floor($xml->getAttribute('pr') / ($ctAgeGroup->getAdultCount() + $ctAgeGroup->getChildCount()));
+
+                                            if ($price > 6000) {
+                                                // echo "price: $price, initial price: " . $xml->getAttribute('pr') . "\r\n"
+                                                //       . 'ad: ' . $ctAgeGroup->getAdultCount() . "\r\n"
+                                                //       . 'cd: ' . $ctAgeGroup->getChildCount() . "\r\n"
+                                                //       . 'fmn: ' . $ctAgeGroup->getFirstChildMinAge() . "\r\n"
+                                                //       . 'fmx: ' . $ctAgeGroup->getFirstChildMaxAge() . "\r\n"
+                                                //       . 'smn: ' . $ctAgeGroup->getSecondChildMinAge() . "\r\n"
+                                                //       . 'smx: ' . $ctAgeGroup->getSecondChildMaxAge() . "\r\n"
+                                                //       . 'tmn: ' . $ctAgeGroup->getThirdChildMinAge() . "\r\n"
+                                                //       . 'tmx: ' . $ctAgeGroup->getThirdChildMaxAge() . "\r\n"
+                                                //       . 'ctHotelId: ' . $ctHotelId;
+                                                continue;
+                                            }
 
                                             $ass[$as][$price]['ctFlight'][spl_object_hash($ctFlight)] = $ctFlight;
                                             $ass[$as][$price]['accomodation'] = $accomodation;
@@ -215,7 +236,7 @@ Class CoralTravelXML extends Parser {
                             }
 
                             $this->myLog(__LINE__, "parsing of file: $fileXml ended");
-                            // exit;
+                            exit;
                         }
                     }
                 } else {
@@ -532,10 +553,10 @@ Class CoralTravelXML extends Parser {
         // foreach ($ctPrices as $ctPrice) {
         //     $ctPricesCache[$ctPrice->getAccomodation()->getId()][$ctPrice->getCtFlightBundle()->getId()][$ctPrice->getCtAgeGroupBundle()->getId()] = $ctPrice->getPrice();
         // }
-        
+        $pCountInsert = 0;
         foreach ($ass as $priceArr) {
             foreach ($priceArr as $price => $param) {  
-
+                $pCountInsert++;
                 // $doInsert = true;
                 // foreach ($ctPrices as $ctPrice) {
                 //     if ( isset($ctPricesCache[$param['accomodation']->getId()][$param['ctFlightBundle']->getId()][$param['ctAgeGroupBundle']->getId()])     &&
@@ -560,5 +581,6 @@ Class CoralTravelXML extends Parser {
         if ($query) {
             $this->conn->executeQuery($query); 
         }
+        return $pCountInsert;
     }
 }
