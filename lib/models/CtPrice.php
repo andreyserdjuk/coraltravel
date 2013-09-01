@@ -39,7 +39,7 @@ class CtPrice extends EntityBase
     private $ctFlightBundle;
 
     /**
-     * @Column(type="smallint", name="price", nullable=false)
+     * @Column(type="smallint", name="price", nullable=false, options={"unsigned"=true})
      */
     private $price;
 
