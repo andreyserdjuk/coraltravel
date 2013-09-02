@@ -73,9 +73,9 @@ class CoralParser {
 							} else {
 								// save available packages (tours) to database
 								// init actual variables...
-								foreach ($packagesIds as $packagesId)
+								foreach ($packagesIds as $packageId)
 								{ // packagesIds iter
-									foreach ($this->items[$packagesId] as $hotelID => $roomArr)
+									foreach ($this->items[$packageId] as $hotelID => $roomArr)
 									{ // hotel iter
 										foreach ($roomArr as $roomID => $mealArr)
 										{ // room iter
@@ -86,9 +86,10 @@ class CoralParser {
 													list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
 													foreach ($flightArr as $flightStr => $tourBeginDate) {
 														list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
-														if (isset($this->flights[$depFlightID]) && $this->flights[$depFlightID] == $returnFlightID) {
-															$itemHotel[$itemID] = $hotelID;
-														}
+														// if (isset($this->flights[$depFlightID]) && $this->flights[$depFlightID] == $returnFlightID) {
+														// 	$itemHotel[$itemID] = $hotelID;
+														// }
+														$this->savePackage(/* list variables */);
 													} 
 													break;
 												} // age group iter
