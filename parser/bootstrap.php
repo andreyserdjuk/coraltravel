@@ -16,8 +16,8 @@ if (THREAD == 'updateDictionaries') {
 	$coral->updateDictionaries();
 }
 
-if (THREAD == 'coralParseXml') {
-	$coral = new CoralTravelXML;
+if (THREAD == 'coralParseXmlDynamic') {
+	$coral = new CoralTravelDynamic;
 	$coral->parseXml();
 }
 

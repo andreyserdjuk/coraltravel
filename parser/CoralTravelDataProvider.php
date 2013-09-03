@@ -4,7 +4,7 @@ use models;
 
 if (!defined("LOCK_START")) { echo "not allowed direct calling";  exit; }
 
-Class CoralTravelXML extends Parser {
+Class CoralTravelDataProvider extends Parser {
 
     public $em;                             // entity manager
     private $ctAgeGroupCache;               // cahe of age groups - we don't need to disturb our database for age group searching...

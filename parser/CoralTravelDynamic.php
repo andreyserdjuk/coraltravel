@@ -1,12 +1,16 @@
 <?php
 // define('ENVIRONMENT', 'development');
-define('_R', __DIR__ . DIRECTORY_SEPARATOR);
+// define('_R', __DIR__ . DIRECTORY_SEPARATOR);
 // require_once "lib/em.php";
 
-$parser = new CoralParser;
+$parser = new CoralTravelDynamic;
 $parser->parseXml();
 
-class CoralParser {
+class CoralTravelDynamic {
+
+	public function __construct() {
+		$this->dataProvider = new parser\CoralTravelDataProvider;
+	}
 
 	function parseXml() {
 
@@ -69,11 +73,17 @@ class CoralParser {
 							// check tours availability
 							$packagesIds = $this->getAvailablePackagesIds($requestString);
 							if (!$packagesIds) {
-								$xml->next('hn') or break;
+								echo "\r\n0\r\n";
+								$nextHn = $xml->next('hn');
+								if(!$nextHn) {
+								 	break;
+								}
 							} else {
+								echo "+hotel";
+								$offers = 0;
 								// save available packages (tours) to database
 								// init actual variables...
-								foreach ($packagesIds as $packageId)
+								foreach ($packagesIds as $packageId => $price)
 								{ // packagesIds iter
 									foreach ($this->items[$packageId] as $hotelID => $roomArr)
 									{ // hotel iter
@@ -89,7 +99,8 @@ class CoralParser {
 														// if (isset($this->flights[$depFlightID]) && $this->flights[$depFlightID] == $returnFlightID) {
 														// 	$itemHotel[$itemID] = $hotelID;
 														// }
-														$this->savePackage(/* list variables */);
+														$this->savePackage($hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price);
+														$offers++;
 													} 
 													break;
 												} // age group iter
@@ -113,6 +124,11 @@ class CoralParser {
 		}
 	}
 
+	private function savePackage($hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price) {
+		// $this->saveXml("$hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price \r\n");
+		echo 1;
+	}
+
 	/**
 	 * @param $xml string - xml with package description
 	 * @return array(1,2,3,4) - itemID's with saleStatus=1
@@ -122,13 +138,14 @@ class CoralParser {
 		$xml = '<Query author="Coral Travel Ukraine" version="1.0.0.0">' . $xml . '</Query>';
 		$xmlString = @$soap->PackagePriceCheckingUkraine( array('xml' => $xml) )->PackagePriceCheckingUkraineResult->any;
 
-		$this->itemIDs = array();
 		$scope = $this;
 		$startElement = function($parser, $currentNodeName, $currentAttrs) use ($scope) {
 			if ($currentNodeName == 'ITEM') {
-				if (isset($currentAttrs['SALESTATUS'])) {
+				// echo '-';
+				if (isset($currentAttrs['SALESTATUS']) && isset($currentAttrs['TOTALPRICE'])) {
 					if ($currentAttrs['SALESTATUS'] == 1) {
-						$scope->itemIDs[] = $currentAttrs['ITEMID'];
+						$scope->itemIDs[$currentAttrs['ITEMID']] = $currentAttrs['TOTALPRICE'];
+						// echo 'SALE';
 					}
 				}
 			}
@@ -139,9 +156,14 @@ class CoralParser {
 		xml_parse($xml_parser, $xmlString, false);
 		xml_parser_free($xml_parser);	
 
-		$itemIDs = $this->itemIDs;
-		unset($this->itemIDs);
-		return isset($itemIDs[0])? $itemIDs : false;
+		// return false, if $itemIDs is empty
+		if (isset($this->itemIDs)) {
+			$itemIDs = $this->itemIDs;
+			unset($this->itemIDs);
+			return $itemIDs;
+		} else {
+			return false;
+		}
 	}
 
 	function checkAvailableTours() {
