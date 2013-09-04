@@ -20,9 +20,7 @@ class CoralTravelDynamic {
 				$xml = new \XMLReader;
 				$res = $xml->open(_R . "coraltravel_xml". DIRECTORY_SEPARATOR . $fileXml);
 				if ($res === TRUE) {
-					$cur = 2;
-					$requestString = '';
-					// $hotelCount = 0;
+
 					while ($xml->read()) {
 						if ($xml->nodeType == $xml::ELEMENT) {
 							if ($xml->name == 'PackagePrices') {
@@ -32,11 +30,7 @@ class CoralTravelDynamic {
 							
 							if ($xml->name == 'hn') {
 								$hotelID = $xml->getAttribute('h');
-								// if ($hotelCount > 1) {
-									// saveXml($requestString);
-									// exit;
-								// }
-								// $hotelCount++;
+								$hotelArr = array();
 							}
 
 							if ($xml->name == 'rn')
@@ -61,79 +55,100 @@ class CoralTravelDynamic {
 								$night = $xml->getAttribute('n');
 								$depFlightID = $xml->getAttribute('d');
 								$returnFlightID = $xml->getAttribute('r');
-								$requestString .= "<Item itemID=\"$itemID\" cur=\"$cur\" tourBeginDate=\"$tourBeginDate\" night=\"$night\" depFlightID=\"$depFlightID\" returnFlightID=\"$returnFlightID\" hotelID=\"$hotelID\" roomID=\"$roomID\" mealID=\"$mealID\" adl=\"$adl\" chd=\"$chd\" fcMax=\"$fcMax\" scMax=\"$scMax\" tcMax=\"$tcMax\" />";
-
+								
 								$agString = implode('-', array($adl, $chd, $fcMax, $scMax, $tcMax));
 								$flightStr = implode('-', array($depFlightID, $returnFlightID, $night));
-								$this->items[$itemID][$hotelID][$roomID][$mealID][$agString][$flightStr] = $tourBeginDate;
-								// $this->flights[$depFlightID] = $returnFlightID;
+								$hotelArr[$hotelID][$roomID][$mealID][$agString][$itemID][$flightStr] = $tourBeginDate;
 							}
 
-						} elseif ($xml->nodeType == $xml::END_ELEMENT && $xml->name == 'a') {
-							// check tours availability
-							$packagesIds = $this->getAvailablePackagesIds($requestString);
-							if (!$packagesIds) {
-								echo "\r\n0\r\n";
-								$nextHn = $xml->next('hn');
-								if(!$nextHn) {
-								 	break;
-								}
-							} else {
-								echo "+hotel";
-								$offers = 0;
-								// save available packages (tours) to database
-								// init actual variables...
-								foreach ($packagesIds as $packageId => $price)
-								{ // packagesIds iter
-									foreach ($this->items[$packageId] as $hotelID => $roomArr)
-									{ // hotel iter
-										foreach ($roomArr as $roomID => $mealArr)
-										{ // room iter
-											foreach ($mealArr as $mealID => $agArr)
-											{ // meal iter
-												foreach ($agArr as $agString => $flightArr)
-												{ // age group iter
-													list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
-													foreach ($flightArr as $flightStr => $tourBeginDate) {
-														list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
-														// if (isset($this->flights[$depFlightID]) && $this->flights[$depFlightID] == $returnFlightID) {
-														// 	$itemHotel[$itemID] = $hotelID;
-														// }
-														$this->savePackage($hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price);
-														$offers++;
-													} 
-													break;
-												} // age group iter
-												break;
-											} // meal iter
-											break;
-										} // room iter
-										$requestStrings[] = $requestString;
-										$requestString = '';			
-									} // hotel iter
-								} // packagesIds iter
-							}
+						} elseif ($xml->nodeType == $xml::END_ELEMENT && $xml->name == 'hn') {
+							$this->processHotelData($hotelArr);
 						}
 					}
 					$xml->close();
-
-					// $this->unsetNotActiveFlights();
-					// $this->checkAvailableTours();
 				}
 			}
 		}
 	}
 
-	private function savePackage($hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price) {
+	private function savePackages($hotelArr, $packagesIds) {
 		// $this->saveXml("$hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price \r\n");
-		echo 1;
+
+		foreach ($hotelArr as $ctHotelId => $roomArr)
+		{ // hotel iter
+			$hotel = $this->dataProvider->provideHotel($ctHotelId);
+
+			foreach ($roomArr as $ctRoomId => $mealArr)
+			{ // room iter
+				$room = $this->dataProvider->provideRoom($ctRoomId);
+
+				foreach ($mealArr as $ctMealId => $agArr)
+				{ // meal iter
+					$meal = $this->dataProvider->provideMeal($ctMealId);
+
+					foreach ($agArr as $agString => $items)
+					{ // age group iter
+						
+						
+						foreach ($items as $itemID => $flightArr)
+						{ // items
+							
+							list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
+
+							foreach ($flightArr as $flightStr => $tourBeginDate)
+							{
+								list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
+
+
+							}
+
+						} // items
+					} // age group iter
+				} // meal iter
+			} // room iter
+		} // hotel iter		
 	}
 
-	/**
-	 * @param $xml string - xml with package description
-	 * @return array(1,2,3,4) - itemID's with saleStatus=1
-	 */
-	public function getAvailablePackagesIds($xml) {
+	public function processHotelData($hotelArr) {
+
+		$firstLoop = TRUE;
+
+		foreach ($hotelArr as $hotelID => $roomArr)
+		{ // hotel iter
+			foreach ($roomArr as $roomID => $mealArr)
+			{ // room iter
+				foreach ($mealArr as $mealID => $agArr)
+				{ // meal iter
+					foreach ($agArr as $agString => $items)
+					{ // age group iter
+						foreach ($items as $itemID => $flightArr)
+						{ // items
+							
+							$requestString = '';
+							list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
+
+							foreach ($flightArr as $flightStr => $tourBeginDate) {
+								list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
+								$requestString .= "<Item itemID=\"$itemID\" cur=\"$cur\" tourBeginDate=\"$tourBeginDate\" night=\"$night\" depFlightID=\"$depFlightID\" returnFlightID=\"$returnFlightID\" hotelID=\"$hotelID\" roomID=\"$roomID\" mealID=\"$mealID\" adl=\"$adl\" chd=\"$chd\" fcMax=\"$fcMax\" scMax=\"$scMax\" tcMax=\"$tcMax\" />";
+							}
+
+							$this->savePackage($hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price);
+							$packagesIds = $this->getPackagesFromXml($requestString);
+							if ($packagesIds) {
+								$this->savePackages($hotelArr, $packagesIds);
+								$firstLoop = FALSE;
+							} elseif($firstLoop) {
+								return false;
+							}
+						} // items
+					} // age group iter
+				} // meal iter
+			} // room iter
+		} // hotel iter
+	}
+	
+	public function getPackagesFromXml($xml) {
+
 		$soap = new \SoapClient('http://service.coraltravel.ua/package.asmx?WSDL');
 		$xml = '<Query author="Coral Travel Ukraine" version="1.0.0.0">' . $xml . '</Query>';
 		$xmlString = @$soap->PackagePriceCheckingUkraine( array('xml' => $xml) )->PackagePriceCheckingUkraineResult->any;
@@ -163,66 +178,6 @@ class CoralTravelDynamic {
 			return $itemIDs;
 		} else {
 			return false;
-		}
-	}
-
-	function checkAvailableTours() {
-		$itemID = 0;
-		$cur = 2;
-		$itemHotel = array();
-		$requestStrings = array();
-		$requestString = '';
-
-		foreach ($this->items as $hotelID => $roomArr)
-		{ // hotel iter
-			foreach ($roomArr as $roomID => $mealArr)
-			{ // room iter
-				foreach ($mealArr as $mealID => $agArr)
-				{ // meal iter
-					foreach ($agArr as $agString => $flightArr)
-					{ // age group iter
-						list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
-						foreach ($flightArr as $flightStr => $tourBeginDate) {
-							list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
-							if (isset($this->flights[$depFlightID]) && $this->flights[$depFlightID] == $returnFlightID) {
-								$requestString .= "<Item itemID=\"$itemID\" cur=\"$cur\" tourBeginDate=\"$tourBeginDate\" night=\"$night\" depFlightID=\"$depFlightID\" returnFlightID=\"$returnFlightID\" hotelID=\"$hotelID\" roomID=\"$roomID\" mealID=\"$mealID\" adl=\"$adl\" chd=\"$chd\" fcMax=\"$fcMax\" scMax=\"$scMax\" tcMax=\"$tcMax\" />";
-								$itemHotel[$itemID] = $hotelID;
-								$itemID++;
-							}
-						} 
-						break;
-					} // age group iter
-					break;
-				} // meal iter
-				break;
-			} // room iter
-			$requestStrings[] = $requestString;
-			$requestString = '';			
-		} // hotel iter
-
-		$this->tourCheckXml($requestStrings);
-	}
-
-	function unsetNotActiveFlights() {
-		$soap = new \SoapClient('http://service.coraltravel.ua/Transport.asmx?WSDL');
-		
-		$scope = $this;
-		$startElement = function($parser, $currentNodeName, $currentAttrs) use ($scope) {
-			if ($currentNodeName == 'RESULT') {
-				if (isset($currentAttrs['DEPARTUREALLOTMENTSTATUSID'])) {
-					if ($currentAttrs['DEPARTUREALLOTMENTSTATUSID'] == 0) {
-						unset($scope->flights[$currentAttrs['DEPARTUREFLIGHTID']]);
-					}
-				}
-			}
-		};
-
-		foreach ($this->flights as $depFlightID => $returnFlightID) {
-			$xml_parser = xml_parser_create();
-			xml_set_element_handler($xml_parser, $startElement, null);
-			$xmlString = @$soap->FlightStatusCheck( array('arrivalFlightID' => $returnFlightID, 'departureFlightID' => $depFlightID ) )->FlightStatusCheckResult->any;
-			xml_parse($xml_parser, $xmlString, false);
-			xml_parser_free($xml_parser);
 		}
 	}
 
@@ -261,4 +216,27 @@ class CoralTravelDynamic {
 		 curl_close( $ch );
 		 return $response;
 	}
+
+	// function unsetNotActiveFlights() {
+	// 	$soap = new \SoapClient('http://service.coraltravel.ua/Transport.asmx?WSDL');
+		
+	// 	$scope = $this;
+	// 	$startElement = function($parser, $currentNodeName, $currentAttrs) use ($scope) {
+	// 		if ($currentNodeName == 'RESULT') {
+	// 			if (isset($currentAttrs['DEPARTUREALLOTMENTSTATUSID'])) {
+	// 				if ($currentAttrs['DEPARTUREALLOTMENTSTATUSID'] == 0) {
+	// 					unset($scope->flights[$currentAttrs['DEPARTUREFLIGHTID']]);
+	// 				}
+	// 			}
+	// 		}
+	// 	};
+
+	// 	foreach ($this->flights as $depFlightID => $returnFlightID) {
+	// 		$xml_parser = xml_parser_create();
+	// 		xml_set_element_handler($xml_parser, $startElement, null);
+	// 		$xmlString = @$soap->FlightStatusCheck( array('arrivalFlightID' => $returnFlightID, 'departureFlightID' => $depFlightID ) )->FlightStatusCheckResult->any;
+	// 		xml_parse($xml_parser, $xmlString, false);
+	// 		xml_parser_free($xml_parser);
+	// 	}
+	// }
 }

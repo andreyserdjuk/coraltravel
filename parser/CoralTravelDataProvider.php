@@ -226,7 +226,12 @@ Class CoralTravelDataProvider extends Parser {
         return $accomodation;
     }
 
-    public function provideHotel($xml) {
+    public function provideHotelFromXml($xml) {
+        $ctHotelId = $xml->getAttribute('h');
+        return $this->provideHotel($ctHotelId);
+    }
+
+    public function provideHotel($ctHotelId) {
         // cache init
         if (!isset($this->ctHotelIndexedCache[0])) {
             $this->ctHotelIndexedCache[0] = 1;
@@ -239,8 +244,6 @@ Class CoralTravelDataProvider extends Parser {
                 }
             }
         }
-
-        $ctHotelId = $xml->getAttribute('h');
         
         if (isset($this->ctHotelIndexedCache[$ctHotelId])) {
             $hoteId = $this->ctHotelIndexedCache[$ctHotelId];
@@ -253,7 +256,13 @@ Class CoralTravelDataProvider extends Parser {
         }
     }
 
-    public function provideMeal($xml) {
+    public function provideMealFromXml($xml) {
+        
+        $ctMealId = $xml->getAttribute('m');
+        return $this->provideMeal($ctMealId);
+    }
+
+    public function provideMeal($ctMealId) {
         // cache init
         if (!isset($this->ctMealIndexedCache[0])) {
             $this->ctMealIndexedCache[0] = 1;
@@ -265,8 +274,6 @@ Class CoralTravelDataProvider extends Parser {
                 }
             }
         }
-        
-        $ctMealId = $xml->getAttribute('m');
 
         if (isset($this->ctMealIndexedCache[$ctMealId])) {
             $mealId = $this->ctMealIndexedCache[$ctMealId];
@@ -278,7 +285,14 @@ Class CoralTravelDataProvider extends Parser {
         }
     }
 
-    public function provideRoom($xml) {
+    public function provideRoomFromXml($xml) {
+
+        $ctRoomId = $xml->getAttribute('r');
+        return $this->provideRoom($ctRoomId);
+    }
+
+    public function provideRoom($ctRoomId)
+    {
         // cache init
         if (!isset($this->ctRoomIndexedCache[0])) {
             $this->ctRoomIndexedCache[0] = 1;
@@ -290,8 +304,6 @@ Class CoralTravelDataProvider extends Parser {
                 }
             }
         }
-
-        $ctRoomId = $xml->getAttribute('r');
 
         if (isset($this->ctRoomIndexedCache[$ctRoomId])) {
             $roomId = $this->ctRoomIndexedCache[$ctRoomId];
