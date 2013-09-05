@@ -88,18 +88,18 @@ class CoralTravelDynamic {
 
 					foreach ($agArr as $agString => $items)
 					{ // age group iter
-						
+						list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
 						
 						foreach ($items as $itemID => $flightArr)
 						{ // items
 							
-							list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
+							if(in_array($itemID, $packagesIds)) {
 
-							foreach ($flightArr as $flightStr => $tourBeginDate)
-							{
-								list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
+								foreach ($flightArr as $flightStr => $tourBeginDate)
+								{
+									list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
 
-
+								}
 							}
 
 						} // items
@@ -112,30 +112,31 @@ class CoralTravelDynamic {
 	public function processHotelData($hotelArr) {
 
 		$firstLoop = TRUE;
-
+		$totalIds = array();
+		$cur = 2;
 		foreach ($hotelArr as $hotelID => $roomArr)
 		{ // hotel iter
 			foreach ($roomArr as $roomID => $mealArr)
 			{ // room iter
 				foreach ($mealArr as $mealID => $agArr)
 				{ // meal iter
+						echo 1;
 					foreach ($agArr as $agString => $items)
 					{ // age group iter
+						list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
 						foreach ($items as $itemID => $flightArr)
 						{ // items
 							
 							$requestString = '';
-							list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
-
 							foreach ($flightArr as $flightStr => $tourBeginDate) {
 								list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
 								$requestString .= "<Item itemID=\"$itemID\" cur=\"$cur\" tourBeginDate=\"$tourBeginDate\" night=\"$night\" depFlightID=\"$depFlightID\" returnFlightID=\"$returnFlightID\" hotelID=\"$hotelID\" roomID=\"$roomID\" mealID=\"$mealID\" adl=\"$adl\" chd=\"$chd\" fcMax=\"$fcMax\" scMax=\"$scMax\" tcMax=\"$tcMax\" />";
 							}
 
-							$this->savePackage($hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price);
 							$packagesIds = $this->getPackagesFromXml($requestString);
+
 							if ($packagesIds) {
-								$this->savePackages($hotelArr, $packagesIds);
+								$totalIds = array_merge($totalIds, $packagesIds);
 								$firstLoop = FALSE;
 							} elseif($firstLoop) {
 								return false;
@@ -145,6 +146,9 @@ class CoralTravelDynamic {
 				} // meal iter
 			} // room iter
 		} // hotel iter
+		// $this->savePackages($hotelArr, $packagesIds);
+		echo "\r\n" . count($packagesIds) . "\r\n"; exit;
+		// $this->savePackage($hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price);
 	}
 	
 	public function getPackagesFromXml($xml) {
