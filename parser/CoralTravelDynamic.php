@@ -1,15 +1,13 @@
 <?php
+namespace parser;
 // define('ENVIRONMENT', 'development');
 // define('_R', __DIR__ . DIRECTORY_SEPARATOR);
 // require_once "lib/em.php";
 
-$parser = new CoralTravelDynamic;
-$parser->parseXml();
-
 class CoralTravelDynamic {
 
 	public function __construct() {
-		$this->dataProvider = new parser\CoralTravelDataProvider;
+		$this->dataProvider = new CoralTravelDataProvider;
 	}
 
 	function parseXml() {
@@ -31,6 +29,7 @@ class CoralTravelDynamic {
 							if ($xml->name == 'hn') {
 								$hotelID = $xml->getAttribute('h');
 								$hotelArr = array();
+								$itemID = 0;
 							}
 
 							if ($xml->name == 'rn')
@@ -46,7 +45,6 @@ class CoralTravelDynamic {
 								$scMax = $xml->getAttribute('smx');
 								$tcMax = $xml->getAttribute('tmx');
 								$requestString = '';
-								$itemID = 0;
 							}
 
 							if ($xml->name == 'p') {
@@ -57,8 +55,8 @@ class CoralTravelDynamic {
 								$returnFlightID = $xml->getAttribute('r');
 								
 								$agString = implode('-', array($adl, $chd, $fcMax, $scMax, $tcMax));
-								$flightStr = implode('-', array($depFlightID, $returnFlightID, $night));
-								$hotelArr[$hotelID][$roomID][$mealID][$agString][$itemID][$flightStr] = $tourBeginDate;
+								$flightStr = implode('-', array($depFlightID, $returnFlightID, $night, $itemID));
+								$hotelArr[$hotelID][$roomID][$mealID][$agString][$flightStr] = $tourBeginDate;
 							}
 
 						} elseif ($xml->nodeType == $xml::END_ELEMENT && $xml->name == 'hn') {
@@ -120,34 +118,37 @@ class CoralTravelDynamic {
 			{ // room iter
 				foreach ($mealArr as $mealID => $agArr)
 				{ // meal iter
-						echo 1;
-					foreach ($agArr as $agString => $items)
+					foreach ($agArr as $agString => $flightArr)
 					{ // age group iter
 						list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
-						foreach ($items as $itemID => $flightArr)
+						
+						$requestString = '';
+
+						foreach ($flightArr as $flightStr => $tourBeginDate)
 						{ // items
-							
-							$requestString = '';
-							foreach ($flightArr as $flightStr => $tourBeginDate) {
-								list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
-								$requestString .= "<Item itemID=\"$itemID\" cur=\"$cur\" tourBeginDate=\"$tourBeginDate\" night=\"$night\" depFlightID=\"$depFlightID\" returnFlightID=\"$returnFlightID\" hotelID=\"$hotelID\" roomID=\"$roomID\" mealID=\"$mealID\" adl=\"$adl\" chd=\"$chd\" fcMax=\"$fcMax\" scMax=\"$scMax\" tcMax=\"$tcMax\" />";
-							}
-
-							$packagesIds = $this->getPackagesFromXml($requestString);
-
-							if ($packagesIds) {
-								$totalIds = array_merge($totalIds, $packagesIds);
-								$firstLoop = FALSE;
-							} elseif($firstLoop) {
-								return false;
-							}
+							list($depFlightID, $returnFlightID, $night, $itemID) = explode('-', $flightStr);
+							$requestString .= "<Item itemID=\"$itemID\" cur=\"$cur\" tourBeginDate=\"$tourBeginDate\" night=\"$night\" depFlightID=\"$depFlightID\" returnFlightID=\"$returnFlightID\" hotelID=\"$hotelID\" roomID=\"$roomID\" mealID=\"$mealID\" adl=\"$adl\" chd=\"$chd\" fcMax=\"$fcMax\" scMax=\"$scMax\" tcMax=\"$tcMax\" />";
 						} // items
+
+						$packagesIds = $this->getPackagesFromXml($requestString);
+
+						if ($packagesIds) {
+							$totalIds = array_merge($totalIds, $packagesIds);
+							$firstLoop = FALSE;
+							print_r($packagesIds); exit;
+							echo "found ".count($packagesIds)."\r\n";
+						} elseif($firstLoop) {
+							// echo "empty hotel\r\n";
+							// return false;
+							break 4;
+						}
 					} // age group iter
 				} // meal iter
 			} // room iter
 		} // hotel iter
 		// $this->savePackages($hotelArr, $packagesIds);
-		echo "\r\n" . count($packagesIds) . "\r\n"; exit;
+		// echo count($totalIds) . "\r\n";
+		// exit;
 		// $this->savePackage($hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price);
 	}
 	
@@ -158,13 +159,17 @@ class CoralTravelDynamic {
 		$xmlString = @$soap->PackagePriceCheckingUkraine( array('xml' => $xml) )->PackagePriceCheckingUkraineResult->any;
 
 		$scope = $this;
-		$startElement = function($parser, $currentNodeName, $currentAttrs) use ($scope) {
+		$this->c = 0;
+		$startElement = function($parser, $currentNodeName, $currentAttrs) use ($scope, $xmlString, $xml) {
 			if ($currentNodeName == 'ITEM') {
-				// echo '-';
+				echo '-';
+				$scope->c++;
 				if (isset($currentAttrs['SALESTATUS']) && isset($currentAttrs['TOTALPRICE'])) {
 					if ($currentAttrs['SALESTATUS'] == 1) {
 						$scope->itemIDs[$currentAttrs['ITEMID']] = $currentAttrs['TOTALPRICE'];
 						// echo 'SALE';
+						// echo $xml."\r\n";
+						// echo $xmlString;
 					}
 				}
 			}
@@ -174,7 +179,7 @@ class CoralTravelDynamic {
 		xml_set_element_handler($xml_parser, $startElement, null);
 		xml_parse($xml_parser, $xmlString, false);
 		xml_parser_free($xml_parser);	
-
+echo $scope->c;
 		// return false, if $itemIDs is empty
 		if (isset($this->itemIDs)) {
 			$itemIDs = $this->itemIDs;
