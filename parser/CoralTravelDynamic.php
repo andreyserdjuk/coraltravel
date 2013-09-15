@@ -6,8 +6,13 @@ namespace parser;
 
 class CoralTravelDynamic {
 
+	const MAX_CHILD_PROCESSES = 30;
+
+	private $soapClientPackage; // soap client tours get
+
 	public function __construct() {
 		$this->dataProvider = new CoralTravelDataProvider;
+		$this->soapClientPackage = new \SoapClient('http://service.coraltravel.ua/package.asmx?WSDL');
 	}
 
 	function parseXml() {
@@ -60,7 +65,47 @@ class CoralTravelDynamic {
 							}
 
 						} elseif ($xml->nodeType == $xml::END_ELEMENT && $xml->name == 'hn') {
-							$this->processHotelData($hotelArr);
+
+							$created = FALSE;
+
+							while (!$created) {
+		
+								// проверяем, умер ли дочерний процесс
+								while ($signaled_pid = pcntl_waitpid(-1, $status, WNOHANG)) {
+									if ($signaled_pid == -1) {
+										//детей не осталось
+										$childProcesses = array();
+										break;
+									} else {
+										unset($childProcesses[$signaled_pid]);
+									}
+								}
+									
+								if (count($childProcesses) < self::MAX_CHILD_PROCESSES) {
+
+									$pid = pcntl_fork();
+									if ($pid == -1) {
+									  //ошибка
+										echo "error when fork" . PHP_EOL;
+									} elseif ($pid) {
+										// родительский процесс
+										// контроль количества дочерних процессов
+										$childProcesses[$pid] = TRUE;
+										$created = TRUE;
+										echo "c";
+									} else {
+									  // дочерний процесс
+									  // выполнить нагрузку и закрыться нахуй
+										$this->processHotelData($hotelArr);
+										exit;
+									}
+									// сюда попадут оба процесса
+								} else {
+									sleep(1);
+									echo "-";
+								}
+							}
+							
 						}
 					}
 					$xml->close();
@@ -70,6 +115,11 @@ class CoralTravelDynamic {
 	}
 
 	private function savePackages($hotelArr, $packagesIds) {
+		$hotelID = key($hotelArr);
+		$packagesIds = $hotelID . ': ' . implode(',', $packagesIds) . "\r\n";
+		$this->saveXml($packagesIds, $hotelID);
+		return false;
+
 		// $this->saveXml("$hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price \r\n");
 
 		foreach ($hotelArr as $ctHotelId => $roomArr)
@@ -112,16 +162,18 @@ class CoralTravelDynamic {
 		$firstLoop = TRUE;
 		$totalIds = array();
 		$cur = 2;
+		$childProcesses = array();
+
 		foreach ($hotelArr as $hotelID => $roomArr)
 		{ // hotel iter
 			foreach ($roomArr as $roomID => $mealArr)
 			{ // room iter
 				foreach ($mealArr as $mealID => $agArr)
 				{ // meal iter
+						
 					foreach ($agArr as $agString => $flightArr)
 					{ // age group iter
 						list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
-						
 						$requestString = '';
 
 						foreach ($flightArr as $flightStr => $tourBeginDate)
@@ -131,39 +183,38 @@ class CoralTravelDynamic {
 						} // items
 
 						$packagesIds = $this->getPackagesFromXml($requestString);
-
 						if ($packagesIds) {
-							$totalIds = array_merge($totalIds, $packagesIds);
+							$this->savePackages($hotelArr, $packagesIds);
 							$firstLoop = FALSE;
-							print_r($packagesIds); exit;
-							echo "found ".count($packagesIds)."\r\n";
-						} elseif($firstLoop) {
-							// echo "empty hotel\r\n";
-							// return false;
-							break 4;
+						} elseif($firstLoop) { // if hotel has no tours in the first loop, there are no tours in the next loop too
+							exit;
 						}
+
 					} // age group iter
 				} // meal iter
 			} // room iter
 		} // hotel iter
-		// $this->savePackages($hotelArr, $packagesIds);
 		// echo count($totalIds) . "\r\n";
-		// exit;
 		// $this->savePackage($hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price);
 	}
 	
 	public function getPackagesFromXml($xml) {
 
-		$soap = new \SoapClient('http://service.coraltravel.ua/package.asmx?WSDL');
 		$xml = '<Query author="Coral Travel Ukraine" version="1.0.0.0">' . $xml . '</Query>';
-		$xmlString = @$soap->PackagePriceCheckingUkraine( array('xml' => $xml) )->PackagePriceCheckingUkraineResult->any;
+		do {
+			try {
+				$xmlString = @$this->soapClientPackage->PackagePriceCheckingUkraine( array('xml' => $xml) );
+			} catch (Exception $e) {
+				echo ' xml_err ';
+			}
+		} while (!$xmlString);
+
+		$xmlString = $xmlString->PackagePriceCheckingUkraineResult->any;
 
 		$scope = $this;
-		$this->c = 0;
 		$startElement = function($parser, $currentNodeName, $currentAttrs) use ($scope, $xmlString, $xml) {
 			if ($currentNodeName == 'ITEM') {
-				echo '-';
-				$scope->c++;
+				// echo '-';
 				if (isset($currentAttrs['SALESTATUS']) && isset($currentAttrs['TOTALPRICE'])) {
 					if ($currentAttrs['SALESTATUS'] == 1) {
 						$scope->itemIDs[$currentAttrs['ITEMID']] = $currentAttrs['TOTALPRICE'];
@@ -177,26 +228,26 @@ class CoralTravelDynamic {
 
 		$xml_parser = xml_parser_create();
 		xml_set_element_handler($xml_parser, $startElement, null);
-		xml_parse($xml_parser, $xmlString, false);
+		xml_parse($xml_parser, $xmlString, FALSE);
 		xml_parser_free($xml_parser);	
-echo $scope->c;
-		// return false, if $itemIDs is empty
+
+		// return FALSE, if $itemIDs is empty
 		if (isset($this->itemIDs)) {
 			$itemIDs = $this->itemIDs;
 			unset($this->itemIDs);
 			return $itemIDs;
 		} else {
-			return false;
+			return FALSE;
 		}
 	}
 
-	function saveXml($xml) {
-		$file = fopen('logs'.DIRECTORY_SEPARATOR.'xmlResult.xml', 'a+');
+	function saveXml($xml, $hotelID) {
+		$file = fopen('logs'.DIRECTORY_SEPARATOR.'xmlResult' . $hotelID . '.txt', 'a+');
 		fwrite($file, $xml);
 		fclose($file);
 	}
 
-	function _http( $url, $data = false, $type = 'POST', $header = false ) {
+	function _http( $url, $data = FALSE, $type = 'POST', $header = FALSE ) {
 		 $ch = curl_init();
 
 		 if( isset( $data ) && $type == 'GET' ) {
@@ -244,7 +295,7 @@ echo $scope->c;
 	// 		$xml_parser = xml_parser_create();
 	// 		xml_set_element_handler($xml_parser, $startElement, null);
 	// 		$xmlString = @$soap->FlightStatusCheck( array('arrivalFlightID' => $returnFlightID, 'departureFlightID' => $depFlightID ) )->FlightStatusCheckResult->any;
-	// 		xml_parse($xml_parser, $xmlString, false);
+	// 		xml_parse($xml_parser, $xmlString, FALSE);
 	// 		xml_parser_free($xml_parser);
 	// 	}
 	// }
