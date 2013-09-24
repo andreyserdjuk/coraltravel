@@ -116,6 +116,8 @@ class CoralTravelDynamic {
 
 	private function savePackages($hotelArr, $packagesIds) {
 		$hotelID = key($hotelArr);
+		$hotel = $this->dataProvider->provideHotel($hotelID);
+		exit;
 		$packagesIds = $hotelID . ': ' . implode(',', $packagesIds) . "\r\n";
 		$this->saveXml($packagesIds, $hotelID);
 		return false;
@@ -133,6 +135,7 @@ class CoralTravelDynamic {
 				foreach ($mealArr as $ctMealId => $agArr)
 				{ // meal iter
 					$meal = $this->dataProvider->provideMeal($ctMealId);
+					$this->checkpoint();
 
 					foreach ($agArr as $agString => $items)
 					{ // age group iter
@@ -299,4 +302,10 @@ class CoralTravelDynamic {
 	// 		xml_parser_free($xml_parser);
 	// 	}
 	// }
+	function checkpoint($line = 0, $message = 'checkpoint stop') {
+		$f = parse_ini_file('options'.DIRECTORY_SEPARATOR.'checkpoint.ini');
+		if ( $f['die'] == 1 ) {
+			$this->myLog($line, $message, true);
+		}
+	}
 }

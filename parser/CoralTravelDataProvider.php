@@ -231,19 +231,18 @@ Class CoralTravelDataProvider extends Parser {
         return $this->provideHotel($ctHotelId);
     }
 
-    public function provideHotel($ctHotelId) {
+    public function activateHotelCache() {
         // cache init
-        if (!isset($this->ctHotelIndexedCache[0])) {
-            $this->ctHotelIndexedCache[0] = 1;
-
-            $q = $this->em->createQuery('SELECT ct_h, h from models\CtHotel ct_h join ct_h.hotel h');
-            $ctHotels = $q->getResult($q::HYDRATE_ARRAY);
-            if(isset($ctHotels[0])) {
-                foreach ($ctHotels as $row) {
-                    $this->ctHotelIndexedCache[$row['ctHotelId']] = $row['hotel']['id'];
-                }
+        $q = $this->em->createQuery('SELECT ct_h, h from models\CtHotel ct_h join ct_h.hotel h');
+        $ctHotels = $q->getResult($q::HYDRATE_ARRAY);
+        if(isset($ctHotels[0])) {
+            foreach ($ctHotels as $row) {
+                $this->ctHotelIndexedCache[$row['ctHotelId']] = $row['hotel']['id'];
             }
         }
+    }
+
+    public function getHotelFromCache($ctHotelId) {
         
         if (isset($this->ctHotelIndexedCache[$ctHotelId])) {
             $hoteId = $this->ctHotelIndexedCache[$ctHotelId];
@@ -253,6 +252,16 @@ Class CoralTravelDataProvider extends Parser {
             $this->enableTasks(array(CtParsingTask::ID_UPDATE_HOTEL_CATEGORY_GROUP,
                                      CtParsingTask::ID_UPDATE_HOTEL_CATEGORY,
                                      CtParsingTask::ID_UPDATE_HOTEL));
+        }
+    }
+
+    public function provideHotel($ctHotelId) {
+        $q = $this->em->createQuery('SELECT ct_h, h from models\CtHotel ct_h join ct_h.hotel h WHERE ct_h = :ct_hotel_id');
+        $q->setParameter('ct_hotel_id', $ctHotelId);
+        $ctHotel = $q->getOneOrNullResult($q::HYDRATE_ARRAY);
+        if (isset($ctHotel['hotel']['id'])) {
+            $hotelId = $ctHotel['hotel']['id'];
+            return $this->em->getReference('models\Hotel', $hotelId);
         }
     }
 
