@@ -255,13 +255,18 @@ Class CoralTravelDataProvider extends Parser {
         }
     }
 
-    public function provideHotel($ctHotelId) {
-        $q = $this->em->createQuery('SELECT ct_h, h from models\CtHotel ct_h join ct_h.hotel h WHERE ct_h = :ct_hotel_id');
+    public function provideHotel($ctHotelId) { 
+       $q = $this->em->createQuery('SELECT ct_h, h from models\CtHotel ct_h join ct_h.hotel h WHERE ct_h = :ct_hotel_id');
         $q->setParameter('ct_hotel_id', $ctHotelId);
         $ctHotel = $q->getOneOrNullResult($q::HYDRATE_ARRAY);
         if (isset($ctHotel['hotel']['id'])) {
             $hotelId = $ctHotel['hotel']['id'];
             return $this->em->getReference('models\Hotel', $hotelId);
+        } else {
+            $this->myLog(__LINE__, "cann't find hotel id: $ctHotelId");
+            $this->enableTasks(array(CtParsingTask::ID_UPDATE_HOTEL_CATEGORY_GROUP,
+                                     CtParsingTask::ID_UPDATE_HOTEL_CATEGORY,
+                                     CtParsingTask::ID_UPDATE_HOTEL));
         }
     }
 
@@ -271,21 +276,34 @@ Class CoralTravelDataProvider extends Parser {
         return $this->provideMeal($ctMealId);
     }
 
-    public function provideMeal($ctMealId) {
+    public function activateMealCache() {
         // cache init
-        if (!isset($this->ctMealIndexedCache[0])) {
-            $this->ctMealIndexedCache[0] = 1;
-            $q = $this->em->createQuery('SELECT ct_m, m from models\CtMeal ct_m join ct_m.meal m');
-            $ctMeals = $q->getResult($q::HYDRATE_ARRAY);
-            if(isset($ctMeals[0])) {
-                foreach ($ctMeals as $row) {
-                    $this->ctMealIndexedCache[$row['ctMealId']] = $row['meal']['id'];
-                }
+        $q = $this->em->createQuery('SELECT ct_m, m from models\CtMeal ct_m join ct_m.meal m');
+        $ctMeals = $q->getResult($q::HYDRATE_ARRAY);
+        if(isset($ctMeals[0])) {
+            foreach ($ctMeals as $row) {
+                $this->ctMealIndexedCache[$row['ctMealId']] = $row['meal']['id'];
             }
         }
+    }
 
+    public function getMealFromCache($ctMealId) {
         if (isset($this->ctMealIndexedCache[$ctMealId])) {
             $mealId = $this->ctMealIndexedCache[$ctMealId];
+            return $this->em->getReference('models\Meal', $mealId);
+        } else {
+            $this->myLog(__LINE__, "cann't find ctMeal id: $ctMealId");
+            $this->enableTasks(array(CtParsingTask::ID_UPDATE_MEAL_CATEGORY,
+                                     CtParsingTask::ID_UPDATE_MEAL));
+        }
+    }
+
+    public function provideMeal($ctMealId) {
+        $q = $this->em->createQuery('SELECT ct_m, m from models\CtMeal ct_m join ct_m.meal m WHERE ct_m = :ctMealId');
+        $q->setParameter('ctMealId', $ctMealId);
+        $ctMeal = $q->getOneOrNullResult($q::HYDRATE_ARRAY);
+        if (isset($ctMeal['meal']['id'])) {
+            $mealId = $ctMeal['meal']['id'];
             return $this->em->getReference('models\Meal', $mealId);
         } else {
             $this->myLog(__LINE__, "cann't find ctMeal id: $ctMealId");
@@ -300,22 +318,34 @@ Class CoralTravelDataProvider extends Parser {
         return $this->provideRoom($ctRoomId);
     }
 
-    public function provideRoom($ctRoomId)
-    {
+    public function activateRoomCache() {
         // cache init
-        if (!isset($this->ctRoomIndexedCache[0])) {
-            $this->ctRoomIndexedCache[0] = 1;
-            $q = $this->em->createQuery('SELECT ct_r, r from models\CtRoom ct_r join ct_r.room r');
-            $ctRooms = $q->getResult($q::HYDRATE_ARRAY);
-            if(isset($ctRooms[0])) {
-                foreach ($ctRooms as $row) {
-                    $this->ctRoomIndexedCache[$row['ctRoomId']] = $row['room']['id'];
-                }
+        $q = $this->em->createQuery('SELECT ct_r, r from models\CtRoom ct_r join ct_r.room r');
+        $ctRooms = $q->getResult($q::HYDRATE_ARRAY);
+        if(isset($ctRooms[0])) {
+            foreach ($ctRooms as $row) {
+                $this->ctRoomIndexedCache[$row['ctRoomId']] = $row['room']['id'];
             }
         }
+    }
 
+    public function getRoomFromCache($ctRoomId) {
         if (isset($this->ctRoomIndexedCache[$ctRoomId])) {
             $roomId = $this->ctRoomIndexedCache[$ctRoomId];
+            return $this->em->getReference('models\Room', $roomId);
+        } else {
+            $this->myLog(__LINE__, "cann't find ctRoomId: $ctRoomId");
+            $this->enableTasks(array(CtParsingTask::ID_UPDATE_ROOM_CATEGORY,
+                                     CtParsingTask::ID_UPDATE_ROOM));
+        }
+    }
+
+    public function provideRoom($ctRoomId) {
+        $q = $this->em->createQuery('SELECT ct_r, r from models\CtRoom ct_r join ct_r.room r WHERE ct_r = :ctRoomId');
+        $q->setParameter('ctRoomId', $ctRoomId);
+        $ctRoom = $q->getOneOrNullResult($q::HYDRATE_ARRAY);
+        if (isset($ctRoom['room']['id'])) {
+            $roomId = $ctRoom['room']['id'];
             return $this->em->getReference('models\Room', $roomId);
         } else {
             $this->myLog(__LINE__, "cann't find ctRoomId: $ctRoomId");
