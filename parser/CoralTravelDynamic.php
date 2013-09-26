@@ -127,24 +127,25 @@ class CoralTravelDynamic {
 		foreach ($hotelArr as $ctHotelId => $roomArr)
 		{ // hotel iter
 			$hotel = $this->dataProvider->provideHotel($ctHotelId);
-
+			
 			foreach ($roomArr as $ctRoomId => $mealArr)
 			{ // room iter
 				$room = $this->dataProvider->provideRoom($ctRoomId);
 
 				foreach ($mealArr as $ctMealId => $agArr)
 				{ // meal iter
+					
 					$meal = $this->dataProvider->provideMeal($ctMealId);
-					$this->checkpoint();
 
 					foreach ($agArr as $agString => $items)
 					{ // age group iter
-						list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
 						
 						foreach ($items as $itemID => $flightArr)
 						{ // items
 							
 							if(in_array($itemID, $packagesIds)) {
+								list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
+								$this->dataProvider->provideCtAgeGroup();
 
 								foreach ($flightArr as $flightStr => $tourBeginDate)
 								{
@@ -179,15 +180,28 @@ class CoralTravelDynamic {
 						list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
 						$requestString = '';
 
+						// prepare string for SOAP request
 						foreach ($flightArr as $flightStr => $tourBeginDate)
 						{ // items
 							list($depFlightID, $returnFlightID, $night, $itemID) = explode('-', $flightStr);
 							$requestString .= "<Item itemID=\"$itemID\" cur=\"$cur\" tourBeginDate=\"$tourBeginDate\" night=\"$night\" depFlightID=\"$depFlightID\" returnFlightID=\"$returnFlightID\" hotelID=\"$hotelID\" roomID=\"$roomID\" mealID=\"$mealID\" adl=\"$adl\" chd=\"$chd\" fcMax=\"$fcMax\" scMax=\"$scMax\" tcMax=\"$tcMax\" />";
 						} // items
 
+						// get active packages from CoralTravel api
 						$packagesIds = $this->getPackagesFromXml($requestString);
+						$this->checkpoint();
+
 						if ($packagesIds) {
-							$this->savePackages($hotelArr, $packagesIds);
+
+							// remove inactive offers
+							foreach ($flightArr as $flightStr => $tourBeginDate)
+							{ // items
+								list($depFlightID, $returnFlightID, $night, $itemID) = explode('-', $flightStr);
+								if (!array_search($itemID, $packagesIds)) {
+									unset($hotelArr[$hotelID][$roomID][$mealID][$agString][$flightStr]);
+								}
+							} // items
+
 							$firstLoop = FALSE;
 						} elseif($firstLoop) { // if hotel has no tours in the first loop, there are no tours in the next loop too
 							exit;
@@ -197,8 +211,8 @@ class CoralTravelDynamic {
 				} // meal iter
 			} // room iter
 		} // hotel iter
-		// echo count($totalIds) . "\r\n";
-		// $this->savePackage($hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price);
+
+		$this->savePackages($hotelArr, $packagesIds);
 	}
 	
 	public function getPackagesFromXml($xml) {
