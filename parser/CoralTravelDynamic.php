@@ -8,11 +8,20 @@ class CoralTravelDynamic {
 
 	const MAX_CHILD_PROCESSES = 30;
 
-	private $soapClientPackage; // soap client tours get
+	private $soapClientPackage; 	// soap client tours get
+	private $operator; 				// CoralTravel
+	
+	private $fromAreaID;				// fromAreaId == departureCityId
+	private $departureCity;			// city of tour begin
+
+	private $ctCurrencyId;			// 
+	private $currency;				// 
+
 
 	public function __construct() {
 		$this->dataProvider = new CoralTravelDataProvider;
 		$this->soapClientPackage = new \SoapClient('http://service.coraltravel.ua/package.asmx?WSDL');
+		$operator = $this->dataProvider->em->getReference('models\Operator', 1);
 	}
 
 	function parseXml() {
@@ -27,8 +36,10 @@ class CoralTravelDynamic {
 					while ($xml->read()) {
 						if ($xml->nodeType == $xml::ELEMENT) {
 							if ($xml->name == 'PackagePrices') {
-								$fromAreaID = $xml->getAttribute('fromAreaID');
-								$ctCurrencyId = $xml->getAttribute('currency');
+								$this->fromAreaID = $xml->getAttribute('fromAreaID');
+								$this->ctCurrencyId = $xml->getAttribute('currency');
+								$this->currency = $this->dataProvider->provideCurrency($this->ctCurrencyId);
+								$this->departureCity = $this->dataProvider->provideDepartureCity($this->fromAreaID);
 							}
 							
 							if ($xml->name == 'hn') {
@@ -69,7 +80,7 @@ class CoralTravelDynamic {
 							$created = FALSE;
 
 							while (!$created) {
-		
+
 								// проверяем, умер ли дочерний процесс
 								while ($signaled_pid = pcntl_waitpid(-1, $status, WNOHANG)) {
 									if ($signaled_pid == -1) {
@@ -82,6 +93,8 @@ class CoralTravelDynamic {
 								}
 									
 								if (count($childProcesses) < self::MAX_CHILD_PROCESSES) {
+									
+									$this->checkpoint();
 
 									$pid = pcntl_fork();
 									if ($pid == -1) {
@@ -96,7 +109,9 @@ class CoralTravelDynamic {
 									} else {
 									  // дочерний процесс
 									  // выполнить нагрузку и закрыться нахуй
-										$this->processHotelData($hotelArr);
+										$hotelArr = $this->processHotelData($hotelArr);
+										$bundles = $this->packBundles($hotelArr);
+										$this->dataProvider->doInserts($bundles);
 										exit;
 									}
 									// сюда попадут оба процесса
@@ -114,19 +129,13 @@ class CoralTravelDynamic {
 		}
 	}
 
-	private function savePackages($hotelArr, $packagesIds) {
+	private function packBundles($hotelArr) {
 		$hotelID = key($hotelArr);
 		$hotel = $this->dataProvider->provideHotel($hotelID);
-		exit;
-		$packagesIds = $hotelID . ': ' . implode(',', $packagesIds) . "\r\n";
-		$this->saveXml($packagesIds, $hotelID);
-		return false;
-
-		// $this->saveXml("$hotelID, $roomID, $mealID, $adl, $chd, $fcMax, $scMax, $tcMax, $depFlightID, $returnFlightID, $night, $price \r\n");
 
 		foreach ($hotelArr as $ctHotelId => $roomArr)
 		{ // hotel iter
-			$hotel = $this->dataProvider->provideHotel($ctHotelId);
+			// $hotel = $this->dataProvider->provideHotel($ctHotelId);
 			
 			foreach ($roomArr as $ctRoomId => $mealArr)
 			{ // room iter
@@ -134,39 +143,40 @@ class CoralTravelDynamic {
 
 				foreach ($mealArr as $ctMealId => $agArr)
 				{ // meal iter
-					
 					$meal = $this->dataProvider->provideMeal($ctMealId);
 
 					foreach ($agArr as $agString => $items)
 					{ // age group iter
+						list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
+						$ctAgeGroup = $this->dataProvider->getCtAgeGroupFromCache(array('ad' => $adl,'cd' => $chd,'fmn' => false,'fmx' => $fcMax,'smn' => false,'smx' => $scMax,'tmn' => false,'tmx' => $tcMax));
 						
 						foreach ($items as $itemID => $flightArr)
 						{ // items
-							
-							if(in_array($itemID, $packagesIds)) {
-								list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
-								$this->dataProvider->provideCtAgeGroup();
-
-								foreach ($flightArr as $flightStr => $tourBeginDate)
-								{
-									list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
-
-								}
+						
+							foreach ($flightArr as $flightStr => $tourBeginDate)
+							{
+								list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
+								$accomodation = $this->dataProvider->provideAccomodation(array('operator' => $this->operator, 'currency' => $this->currency, 'departureCity' => $this->departureCity, 'hotel' => $hotel, 'room' => $room, 'meal' => $meal));
+								$tourBeginDate = new \DateTime("$tourBeginDate");
+								$ctFlight = $this->dataProvider->provideCtFlight($tourBeginDate, $night, $depFlightID, $returnFlightID);
+								$bundles[$room->getId() . '-' . $meal->getId()][$price]['ctFlight'][spl_object_hash($ctFlight)] = $ctFlight;
+								$bundles[$room->getId() . '-' . $meal->getId()][$price]['accomodation'] = $accomodation;
+								$bundles[$room->getId() . '-' . $meal->getId()][$price]['ctAgeGroups'][spl_object_hash($ctAgeGroup)] = $ctAgeGroup;
 							}
 
 						} // items
 					} // age group iter
 				} // meal iter
 			} // room iter
-		} // hotel iter		
+		} // hotel iter
+
+		return $bundles;
 	}
 
 	public function processHotelData($hotelArr) {
 
 		$firstLoop = TRUE;
-		$totalIds = array();
-		$cur = 2;
-		$childProcesses = array();
+		$cur = $this->ctCurrencyId;
 
 		foreach ($hotelArr as $hotelID => $roomArr)
 		{ // hotel iter
@@ -211,8 +221,7 @@ class CoralTravelDynamic {
 				} // meal iter
 			} // room iter
 		} // hotel iter
-
-		$this->savePackages($hotelArr, $packagesIds);
+		return $hotelArr;
 	}
 	
 	public function getPackagesFromXml($xml) {
@@ -317,9 +326,21 @@ class CoralTravelDynamic {
 	// 	}
 	// }
 	function checkpoint($line = 0, $message = 'checkpoint stop') {
-		$f = parse_ini_file('options'.DIRECTORY_SEPARATOR.'checkpoint.ini');
+		$f = parse_ini_file ('options'.DIRECTORY_SEPARATOR.'checkpoint.ini');
 		if ( $f['die'] == 1 ) {
 			$this->myLog($line, $message, true);
 		}
+	}
+
+	function myLog($line = 0, $message = 'defalt message', $terminate=false) {
+	    $file = fopen('logs'.DIRECTORY_SEPARATOR.'log.txt', 'a+');
+	    $dtime = new \DateTime();
+	    $dtime = $dtime->format("Y-m-d H:i:s");
+	    $line = sprintf("%1$05d", $line);
+	    fwrite($file, "$dtime | line: $line | message: $message\r\n");
+	    fclose($file);
+	    if ($terminate) {
+	        exit("exit on line $line");
+	    }
 	}
 }

@@ -137,12 +137,12 @@ Class CoralTravelDataProvider extends Parser {
         }
     }
 
-    public function provideCtFlight($xml) {
+    public function provideCtFlight($tourBeginDate, $nights, $departureFlightId, $returnFlightId) {
 
-        $params = array('tourBegin'         => new \DateTime($xml->getAttribute('tb')),
-                        'nights'            => $xml->getAttribute('n'),
-                        'departureFlightId' => $xml->getAttribute('d'),
-                        'returnFlightId'    => $xml->getAttribute('r'));
+        $params = array('tourBegin'         => $tourBeginDate,
+                        'nights'            => $nights,
+                        'departureFlightId' => $departureFlightId,
+                        'returnFlightId'    => $returnFlightId);
         // init cache
         if (!isset($this->ctFlightIndexedCache[0])) {
             $this->ctFlightIndexedCache[0] = 1;
@@ -198,8 +198,7 @@ Class CoralTravelDataProvider extends Parser {
         $meal = $params['meal']->getId();
 
         // cache init
-        if (!isset($this->accomodationsIndexedCache) || $this->departureCityFlag != $departureCity) {
-            $this->departureCityFlag = $departureCity;
+        if (!isset($this->accomodationsIndexedCache)) {
             $accomodations = $this->em->getRepository('models\Accomodation')->findBy(array('operator' => $params['operator'], 'departureCity' => $params['departureCity']));
             if(isset($accomodations[0])) {
                 $this->accomodationsIndexedCache = array();
@@ -354,25 +353,9 @@ Class CoralTravelDataProvider extends Parser {
         }
     }
 
-    public function firstStepTree($xml) {
-        // destination Country
-        // $destinationID = $xml->getAttribute('destinationID');
-        // $q = $this->em
-        //     ->createQuery(
-        //         'SELECT ctc, c
-        //             from models\CtCountry ctc
-        //             left join ctc.country c
-        //             where ctc.ctCountryId = :destinationID')
-        //     ->setParameter('destinationID', $destinationID);
-
-        // $ctCountry = $q->getOneOrNullResult($q::HYDRATE_ARRAY);
-        // if (!$ctCountry) {
-        //     $this->myLog(__LINE__, 'not found country with id:' . $ctCountry['country']['id'], 1);
-        // }
-        // $desinationCountryId = $ctCountry['country']['id'];
-
+    public function provideDepartureCity($fromAreaID) {
         // departure Place (city)
-        $fromAreaID = $xml->getAttribute('fromAreaID');
+         // = $xml->getAttribute('fromAreaID');
         $ctArea = $this->em->getRepository('models\CtArea')->findOneBy(array('ctAreaId' => $fromAreaID));
         if (!$ctArea) {
             $this->myLog(__LINE__, "cann't find CtArea (fromAreaID) with ctAreaId: $fromAreaID", 1);
@@ -380,18 +363,19 @@ Class CoralTravelDataProvider extends Parser {
                                      CtParsingTask::ID_UPDATE_REGION,
                                      CtParsingTask::ID_UPDATE_AREA,
                                      CtParsingTask::ID_UPDATE_PLACE));
-            return false; // break current xml file parsing
-        }
-        $area = $ctArea->getArea();
-        $departureCity = $this->em->getRepository('models\Place')->findOneBy(array('area' => $area->getId()));
+        } else {
+            $area = $ctArea->getArea();
+            $departureCity = $this->em->getRepository('models\Place')->findOneBy(array('area' => $area->getId()));
 
+            return $departureCity;
+        }
+    }
+
+    public function provideCurrency($ctCurrencyId) {
         // currency
-        $ctCurrencyId = $xml->getAttribute('currency');
         $ctCurrency = $this->em->getRepository('models\CtCurrency')->findOneBy(array('ctCurrencyId' => $ctCurrencyId));
         $currency = $ctCurrency->getCurrency();
-
-        return array('currency'          => $currency,
-                     'departureCity'     => $departureCity);
+        return $currency;
     }
 
     public function getCtAgeGroupBundleFromCache($ctAgeGroups) {
