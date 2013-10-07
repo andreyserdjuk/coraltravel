@@ -7,6 +7,7 @@ namespace parser;
 class CoralTravelDynamic {
 
 	const MAX_CHILD_PROCESSES = 30;
+	const ID_CORAL_TRAVEL = 1;
 
 	private $soapClientPackage; 	// soap client tours get
 	private $operator; 				// CoralTravel
@@ -19,9 +20,7 @@ class CoralTravelDynamic {
 
 
 	public function __construct() {
-		$this->dataProvider = new CoralTravelDataProvider;
 		$this->soapClientPackage = new \SoapClient('http://service.coraltravel.ua/package.asmx?WSDL');
-		$operator = $this->dataProvider->em->getReference('models\Operator', 1);
 	}
 
 	function parseXml() {
@@ -38,8 +37,6 @@ class CoralTravelDynamic {
 							if ($xml->name == 'PackagePrices') {
 								$this->fromAreaID = $xml->getAttribute('fromAreaID');
 								$this->ctCurrencyId = $xml->getAttribute('currency');
-								$this->currency = $this->dataProvider->provideCurrency($this->ctCurrencyId);
-								$this->departureCity = $this->dataProvider->provideDepartureCity($this->fromAreaID);
 							}
 							
 							if ($xml->name == 'hn') {
@@ -110,8 +107,10 @@ class CoralTravelDynamic {
 									  // дочерний процесс
 									  // выполнить нагрузку и закрыться нахуй
 										$hotelArr = $this->processHotelData($hotelArr);
+										$this->dataProvider = new CoralTravelDataProvider;
 										$bundles = $this->packBundles($hotelArr);
-										$this->dataProvider->doInserts($bundles);
+										$inserts = $this->dataProvider->doInserts($bundles);
+										$this->myLog(__LINE__, "inserts: $inserts");
 										exit;
 									}
 									// сюда попадут оба процесса
@@ -130,8 +129,13 @@ class CoralTravelDynamic {
 	}
 
 	private function packBundles($hotelArr) {
+
+		$this->currency = $this->dataProvider->provideCurrency($this->ctCurrencyId);
+		$this->departureCity = $this->dataProvider->provideDepartureCity($this->fromAreaID);
+		$operator = $this->dataProvider->em->getReference('models\Operator', self::ID_CORAL_TRAVEL);
 		$hotelID = key($hotelArr);
 		$hotel = $this->dataProvider->provideHotel($hotelID);
+		$bundles = array();
 
 		foreach ($hotelArr as $ctHotelId => $roomArr)
 		{ // hotel iter
@@ -148,7 +152,7 @@ class CoralTravelDynamic {
 					foreach ($agArr as $agString => $items)
 					{ // age group iter
 						list($adl, $chd, $fcMax, $scMax, $tcMax) = explode('-', $agString);
-						$ctAgeGroup = $this->dataProvider->getCtAgeGroupFromCache(array('ad' => $adl,'cd' => $chd,'fmn' => false,'fmx' => $fcMax,'smn' => false,'smx' => $scMax,'tmn' => false,'tmx' => $tcMax));
+						$ctAgeGroup = $this->dataProvider->getCtAgeGroupFromCache(array('ad' => $adl,'cd' => $chd,'fmn' => FALSE,'fmx' => $fcMax,'smn' => FALSE,'smx' => $scMax,'tmn' => FALSE,'tmx' => $tcMax));
 						
 						foreach ($items as $itemID => $flightArr)
 						{ // items
@@ -198,7 +202,7 @@ class CoralTravelDynamic {
 						} // items
 
 						// get active packages from CoralTravel api
-						$packagesIds = $this->getPackagesFromXml($requestString);
+						$packagesIds = $this->getPackagesFromSOAP($requestString);
 						$this->checkpoint();
 
 						if ($packagesIds) {
@@ -224,29 +228,28 @@ class CoralTravelDynamic {
 		return $hotelArr;
 	}
 	
-	public function getPackagesFromXml($xml) {
+	private function getPackagesFromSOAP($xml) {
 
 		$xml = '<Query author="Coral Travel Ukraine" version="1.0.0.0">' . $xml . '</Query>';
+
+		$xmlString = '';
 		do {
 			try {
-				$xmlString = @$this->soapClientPackage->PackagePriceCheckingUkraine( array('xml' => $xml) );
-			} catch (Exception $e) {
-				echo ' xml_err ';
+				$xmlString = $this->soapClientPackage->PackagePriceCheckingUkraine( array('xml' => $xml) );
+			} catch (\SoapFault $e) {
+				echo "\r\nsoap error: $e->faultcode\r\n";
+				$this->myLog(__LINE__, "soap error: $e->faultcode");
 			}
-		} while (!$xmlString);
+		} while ($xmlString == '');
 
 		$xmlString = $xmlString->PackagePriceCheckingUkraineResult->any;
 
 		$scope = $this;
 		$startElement = function($parser, $currentNodeName, $currentAttrs) use ($scope, $xmlString, $xml) {
 			if ($currentNodeName == 'ITEM') {
-				// echo '-';
 				if (isset($currentAttrs['SALESTATUS']) && isset($currentAttrs['TOTALPRICE'])) {
 					if ($currentAttrs['SALESTATUS'] == 1) {
 						$scope->itemIDs[$currentAttrs['ITEMID']] = $currentAttrs['TOTALPRICE'];
-						// echo 'SALE';
-						// echo $xml."\r\n";
-						// echo $xmlString;
 					}
 				}
 			}
@@ -262,8 +265,6 @@ class CoralTravelDynamic {
 			$itemIDs = $this->itemIDs;
 			unset($this->itemIDs);
 			return $itemIDs;
-		} else {
-			return FALSE;
 		}
 	}
 
@@ -332,7 +333,7 @@ class CoralTravelDynamic {
 		}
 	}
 
-	function myLog($line = 0, $message = 'defalt message', $terminate=false) {
+	function myLog($line = 0, $message = 'defalt message', $terminate=FALSE) {
 	    $file = fopen('logs'.DIRECTORY_SEPARATOR.'log.txt', 'a+');
 	    $dtime = new \DateTime();
 	    $dtime = $dtime->format("Y-m-d H:i:s");

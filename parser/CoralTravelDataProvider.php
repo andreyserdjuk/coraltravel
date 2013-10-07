@@ -457,33 +457,41 @@ Class CoralTravelDataProvider extends Parser {
         //     $ctPricesCache[$ctPrice->getAccomodation()->getId()][$ctPrice->getCtFlightBundle()->getId()][$ctPrice->getCtAgeGroupBundle()->getId()] = $ctPrice->getPrice();
         // }
         $pCountInsert = 0;
-        foreach ($ass as $priceArr) {
-            foreach ($priceArr as $price => $param) {  
-                $pCountInsert++;
-                // $doInsert = true;
-                // foreach ($ctPrices as $ctPrice) {
-                //     if ( isset($ctPricesCache[$param['accomodation']->getId()][$param['ctFlightBundle']->getId()][$param['ctAgeGroupBundle']->getId()])     &&
-                //          $ctPricesCache[$param['accomodation']->getId()][$param['ctFlightBundle']->getId()][$param['ctAgeGroupBundle']->getId()] == $price
-                //         )
-                //     {
-                //         $doInsert = false;
-                //         break;
-                //     }
-                // }
 
-                // if ($doInsert) {
-                    if (!isset($query)) {
-                        $query = 'insert into ct_price(price, accomodation, ct_age_group_bundle, ct_flight_bundle_id) 
-                                    values('.$price.','.$param['accomodation']->getId().','.$param['ctAgeGroupBundle']->getId().','.$param['ctFlightBundle']->getId().')';
-                    } else {
-                        $query .= ',('.$price.','.$param['accomodation']->getId().','.$param['ctAgeGroupBundle']->getId().','.$param['ctFlightBundle']->getId().')';
-                    }
-                // }  
+        $query = FALSE; // prepared query for insert
+
+        if (!empty($ass)) {
+            foreach ($ass as $priceArr) {
+                foreach ($priceArr as $price => $param) {  
+                    $pCountInsert++;
+                    // $doInsert = true;
+                    // foreach ($ctPrices as $ctPrice) {
+                    //     if ( isset($ctPricesCache[$param['accomodation']->getId()][$param['ctFlightBundle']->getId()][$param['ctAgeGroupBundle']->getId()])     &&
+                    //          $ctPricesCache[$param['accomodation']->getId()][$param['ctFlightBundle']->getId()][$param['ctAgeGroupBundle']->getId()] == $price
+                    //         )
+                    //     {
+                    //         $doInsert = false;
+                    //         break;
+                    //     }
+                    // }
+
+                    // if ($doInsert) {
+                        if ($query == FALSE) {
+                            $query = 'insert into ct_price(price, accomodation, ct_age_group_bundle, ct_flight_bundle_id) 
+                                        values('.$price.','.$param['accomodation']->getId().','.$param['ctAgeGroupBundle']->getId().','.$param['ctFlightBundle']->getId().')';
+                        } else {
+                            $query .= ',('.$price.','.$param['accomodation']->getId().','.$param['ctAgeGroupBundle']->getId().','.$param['ctFlightBundle']->getId().')';
+                        }
+                    // }  
+                }
             }
         }
-        if ($query) {
+
+        if ($query != FALSE) {
             $this->conn->executeQuery($query); 
+            return $pCountInsert;
+        } else {
+            return FALSE;
         }
-        return $pCountInsert;
     }
 }
