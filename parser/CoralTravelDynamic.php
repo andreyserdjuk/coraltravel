@@ -156,16 +156,19 @@ class CoralTravelDynamic {
 						
 						foreach ($items as $itemID => $flightArr)
 						{ // items
-						
-							foreach ($flightArr as $flightStr => $tourBeginDate)
+								
+							if (!empty($flightArr))
 							{
-								list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
-								$accomodation = $this->dataProvider->provideAccomodation(array('operator' => $this->operator, 'currency' => $this->currency, 'departureCity' => $this->departureCity, 'hotel' => $hotel, 'room' => $room, 'meal' => $meal));
-								$tourBeginDate = new \DateTime("$tourBeginDate");
-								$ctFlight = $this->dataProvider->provideCtFlight($tourBeginDate, $night, $depFlightID, $returnFlightID);
-								$bundles[$room->getId() . '-' . $meal->getId()][$price]['ctFlight'][spl_object_hash($ctFlight)] = $ctFlight;
-								$bundles[$room->getId() . '-' . $meal->getId()][$price]['accomodation'] = $accomodation;
-								$bundles[$room->getId() . '-' . $meal->getId()][$price]['ctAgeGroups'][spl_object_hash($ctAgeGroup)] = $ctAgeGroup;
+								foreach ($flightArr as $flightStr => $tourBeginDate)
+								{
+									list($depFlightID, $returnFlightID, $night) = explode('-', $flightStr);
+									$accomodation = $this->dataProvider->provideAccomodation(array('operator' => $this->operator, 'currency' => $this->currency, 'departureCity' => $this->departureCity, 'hotel' => $hotel, 'room' => $room, 'meal' => $meal));
+									$tourBeginDate = new \DateTime("$tourBeginDate");
+									$ctFlight = $this->dataProvider->provideCtFlight($tourBeginDate, $night, $depFlightID, $returnFlightID);
+									$bundles[$room->getId() . '-' . $meal->getId()][$price]['ctFlight'][spl_object_hash($ctFlight)] = $ctFlight;
+									$bundles[$room->getId() . '-' . $meal->getId()][$price]['accomodation'] = $accomodation;
+									$bundles[$room->getId() . '-' . $meal->getId()][$price]['ctAgeGroups'][spl_object_hash($ctAgeGroup)] = $ctAgeGroup;
+								}
 							}
 
 						} // items
